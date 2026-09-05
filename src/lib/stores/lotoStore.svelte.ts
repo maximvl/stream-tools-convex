@@ -19,7 +19,6 @@ import type {
 import { createContext, untrack } from 'svelte'
 import shuffle from 'lodash/shuffle'
 import { createLotoWinner, updateLotoWinner, type LotoWinner } from '$lib/api/loto'
-import { createMutation } from '@tanstack/svelte-query'
 import type { AuthStore } from './authStore.svelte'
 import type { ChatServer } from '$lib/types'
 import type { ConnKey } from './chatMessagesStore.svelte'
@@ -150,18 +149,31 @@ export class LotoStore {
     return info?.authenticated ?? true
   }
 
-  saveLotoWinnerQuery = createMutation(() => ({
-    mutationFn: createLotoWinner,
-    onSuccess: (data) => {
-      data.winners.forEach((w) => {
-        this.savedWinnerIds.set(w.username, w.id)
+  // Direct Convex writes (no TanStack wrapper — TanStack stays reserved for
+  // the external chats API). Failures are intentionally ignored, same as the
+  // previous mutation objects whose error state nobody read.
+  saveLotoWinner(params: {
+    server: ChatServer
+    channel: string
+    winner: { username: string; super_game_status: 'skip' | 'win' | 'lose' }
+  }) {
+    createLotoWinner(params)
+      .then((data) => {
+        data.winners.forEach((w) => {
+          this.savedWinnerIds.set(w.username, w.id)
+        })
       })
-    },
-  }))
+      .catch(() => {})
+  }
 
-  updateLotoWinnerQuery = createMutation(() => ({
-    mutationFn: updateLotoWinner,
-  }))
+  updateLotoWinnerStatus(params: {
+    id: string
+    super_game_status: 'skip' | 'win' | 'lose'
+    server: ChatServer
+    channel: string
+  }) {
+    updateLotoWinner(params).catch(() => {})
+  }
 
   constructor(config: LocalStore<LotoConfig>) {
     this.config = config
@@ -182,7 +194,7 @@ export class LotoStore {
         untrack(() => {
           this.openedChats.add(winner.id)
           if (!this.isChannelAuthed(winner.source.server, winner.source.channel)) return
-          this.saveLotoWinnerQuery.mutate({
+          this.saveLotoWinner({
             server: winner.source.server,
             channel: winner.source.channel,
             winner: {
@@ -203,7 +215,7 @@ export class LotoStore {
           if (!winnerId) return
           if (!this.isChannelAuthed(winner.source.server, winner.source.channel)) return
 
-          this.updateLotoWinnerQuery.mutate({
+          this.updateLotoWinnerStatus({
             id: winnerId,
             super_game_status: superGameResult,
             server: winner.source.server,
