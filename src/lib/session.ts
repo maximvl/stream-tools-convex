@@ -25,3 +25,15 @@ export function setSessionId(streamChannel: string, sessionId: string): void {
     // ignore quota / privacy-mode errors
   }
 }
+
+// Client-side session bootstrap: stable per channel, so reactive queries keep
+// the same args across re-renders instead of minting a new id per call.
+export function ensureSessionId(streamChannel: string): string {
+  const existing = getSessionId(streamChannel)
+  if (existing) return existing
+  const bytes = crypto.getRandomValues(new Uint8Array(15))
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const fresh = Array.from(bytes, (b) => chars[b % chars.length]).join('')
+  setSessionId(streamChannel, fresh)
+  return fresh
+}

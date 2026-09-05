@@ -21,55 +21,41 @@ function nowSec(): number {
 }
 
 // GET /api/auth_check?stream_channel=  (Handlers.fs:12-32)
+// Single round trip: verifies the session AND get-or-creates the auth key.
+// A mutation (not a query) because creating the key is a write.
 // Returns session_id explicitly since Convex cannot set cookies.
-export const check = query({
+export const check = mutation({
   args: { stream_channel: v.string(), session_id: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const channelLower = args.stream_channel.toLowerCase()
-    if (args.session_id) {
-      const saved = await ctx.db
-        .query('user_auth')
-        .withIndex('by_channel_lower', (q) => q.eq('channel_lower', channelLower))
-        .unique()
-      if (saved && saved.session_id === args.session_id) {
-        return { authenticated: true as const, session_id: args.session_id }
-      }
-    }
     const session_id = args.session_id ?? makeId(SESSION_LEN)
+    const saved = await ctx.db
+      .query('user_auth')
+      .withIndex('by_channel_lower', (q) => q.eq('channel_lower', channelLower))
+      .unique()
+    if (args.session_id && saved && saved.session_id === args.session_id) {
+      return { authenticated: true as const, session_id }
+    }
     const cacheKey = cacheKeyFor(args.stream_channel, session_id)
+    const now = Date.now()
     const existing = await ctx.db
       .query('auth_keys')
       .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
       .unique()
-    if (existing && existing.expires_at > Date.now()) {
+    if (existing && existing.expires_at > now) {
       return { authenticated: false as const, auth_key: existing.auth_key, session_id }
     }
-    return { authenticated: false as const, auth_key: null as string | null, session_id }
-  },
-})
-
-// Ensures an auth_key exists (called after check when unauthenticated).
-export const requestKey = mutation({
-  args: { stream_channel: v.string(), session_id: v.string() },
-  handler: async (ctx, args) => {
-    const cacheKey = cacheKeyFor(args.stream_channel, args.session_id)
-    const existing = await ctx.db
-      .query('auth_keys')
-      .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
-      .unique()
-    const now = Date.now()
-    if (existing && existing.expires_at > now) return { auth_key: existing.auth_key }
     const auth_key = makeId(AUTH_KEY_LEN)
     if (existing) await ctx.db.delete(existing._id)
     await ctx.db.insert('auth_keys', {
       cache_key: cacheKey,
       stream_channel: args.stream_channel,
-      session_id: args.session_id,
+      session_id,
       auth_key,
       created_at: now,
       expires_at: now + AUTH_TTL_MS,
     })
-    return { auth_key }
+    return { authenticated: false as const, auth_key, session_id }
   },
 })
 

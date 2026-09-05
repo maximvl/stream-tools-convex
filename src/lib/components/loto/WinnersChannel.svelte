@@ -28,5 +28,11 @@
         }))
       })
     }
+    // Prune on unmount so removing a channel doesn't leave its history behind.
+    return () => {
+      untrack(() => {
+        delete lotoStore.winnersHistory[connKey]
+      })
+    }
   })
 </script>

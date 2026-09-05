@@ -2,6 +2,7 @@
   import * as Dialog from '../ui/dialog'
   import { Button } from '$lib/components/ui/button'
   import ServerIcon from '../common/ServerIcon.svelte'
+  import AuthChannel from './AuthChannel.svelte'
   import type { AuthStore } from '$lib/stores/authStore.svelte'
   import type { ConnKey } from '$lib/stores/chatMessagesStore.svelte'
   import { untrack } from 'svelte'
@@ -49,6 +50,11 @@
     authStore.confirmAuth(key)
   }
 </script>
+
+<!-- Reactive per-connection auth subscriptions (no UI). -->
+{#each authStore.connections as key (key)}
+  <AuthChannel {authStore} connKey={key} />
+{/each}
 
 <Dialog.Root bind:open>
   <Dialog.Trigger>

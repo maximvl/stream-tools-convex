@@ -27,24 +27,20 @@ export type AuthCheckResult =
   | { authenticated: true; session_id: string }
   | { authenticated: false; auth_key: string; session_id: string }
 
-// Mirrors GET /api/auth_check (Handlers.fs:12-32)
+// Mirrors GET /api/auth_check (Handlers.fs:12-32) — single round trip,
+// the auth key (when unauthenticated) comes back directly.
 export async function authCheck(params: {
   server: string
   channel: string
 }): Promise<AuthCheckResult> {
   const stream_channel = formatStreamChannel(params.server, params.channel)
-  const client = convexClient()
-  const step1 = await client.query(api.auth.check, {
+  const res = await convexClient().mutation(api.auth.check, {
     stream_channel,
     session_id: getSessionId(stream_channel),
   })
-  setSessionId(stream_channel, step1.session_id)
-  if (step1.authenticated) return { authenticated: true, session_id: step1.session_id }
-  const step2 = await client.mutation(api.auth.requestKey, {
-    stream_channel,
-    session_id: step1.session_id,
-  })
-  return { authenticated: false, auth_key: step2.auth_key, session_id: step1.session_id }
+  setSessionId(stream_channel, res.session_id)
+  if (res.authenticated) return { authenticated: true, session_id: res.session_id }
+  return { authenticated: false, auth_key: res.auth_key, session_id: res.session_id }
 }
 
 // Mirrors POST /api/auth (chat-proof confirm, polled 5x5s by AuthStore)

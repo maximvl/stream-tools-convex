@@ -1,5 +1,8 @@
-import { createContext, untrack } from 'svelte'
-import { auth, authCheck } from '$lib/api/loto'
+import { createContext } from 'svelte'
+import { useConvexClient } from 'convex-svelte'
+import type { ConvexClient } from 'convex/browser'
+import { api } from '../../../convex/_generated/api.js'
+import { getSessionId } from '$lib/session'
 import type { ChatConnection, ChatServer } from '$lib/types'
 import { connToKey, type ConnKey } from './chatMessagesStore.svelte'
 
@@ -16,83 +19,59 @@ export type AuthConnectionInfo = {
   isConfirming: boolean
 }
 
+// Registry for per-connection auth UI state. The actual auth state comes from
+// reactive AuthChannel subscriptions (useQuery api.auth.check); this store
+// only holds their mirrored state plus the confirm-action polling loop.
 export class AuthStore {
   connections = $state<ConnKey[]>([])
 
   connectionInfo = $state<Record<ConnKey, AuthConnectionInfo>>({})
 
+  private convex: ConvexClient
+
   constructor() {
-    $effect(() => {
-      const keys = this.connections
-      for (const key of keys) {
-        untrack(() => this.fetchAuth(key))
-      }
-    })
-  }
-
-  private fetchAuth(key: ConnKey) {
-    const [server, channel] = key.split('/')
-    let info = this.connectionInfo[key]
-    if (!info) {
-      this.connectionInfo[key] = {
-        key,
-        server: server as ChatServer,
-        channel,
-        authenticated: false,
-        isChecking: true,
-        isConfirming: false,
-      }
-      info = this.connectionInfo[key]
-    } else {
-      info.isChecking = true
-    }
-    authCheck({ server: server as ChatServer, channel })
-      .then((res) => {
-        const i = this.connectionInfo[key]
-        if (!i) return
-        i.isChecking = false
-        i.authenticated = res.authenticated
-        i.authKey = res.auth_key
-      })
-      .catch(() => {
-        const i = this.connectionInfo[key]
-        if (i) i.isChecking = false
-      })
-  }
-
-  refreshAll() {
-    for (const key of this.connections) {
-      this.fetchAuth(key)
-    }
+    // Runs during component initialisation (page script top-level), where
+    // reading the convex-svelte context is legal.
+    this.convex = useConvexClient()
   }
 
   confirmAuth(connKey: ConnKey, max_attempts: number = CONFIRM_MAX_ATTEMPTS) {
-    const [server, channel] = connKey.split('/')
+    const [server, channel] = connKey.split('/') as [ChatServer, string]
+    const stream_channel = `${server}/${channel}`
+    const session_id = getSessionId(stream_channel)
     const info = this.connectionInfo[connKey]
+    if (!session_id) {
+      if (info) info.isConfirming = false
+      return
+    }
     if (info) info.isConfirming = true
 
     let attempts = 0
     const tick = async () => {
       attempts++
       try {
-        const res = await auth({ server: server as ChatServer, channel })
-        const i = this.connectionInfo[connKey]
-        if (i) i.authenticated = res.authenticated
+        const res = await this.convex.action(api.auth.confirm, { stream_channel, session_id })
         if (res.authenticated) {
-          if (i) i.isConfirming = false
+          const done = this.connectionInfo[connKey]
+          if (done) {
+            done.authenticated = true
+            done.isConfirming = false
+          }
           return
         }
       } catch {
         // ignore errors, keep polling
       }
       const i = this.connectionInfo[connKey]
-      if (attempts >= max_attempts) {
+      // Stop when the entry is gone, when auth flipped live via the
+      // AuthChannel subscription, or when attempts run out.
+      if (!i || i.authenticated || attempts >= max_attempts) {
         if (i) i.isConfirming = false
-      } else {
-        setTimeout(tick, CONFIRM_INTERVAL_MS)
+        return
       }
+      setTimeout(tick, CONFIRM_INTERVAL_MS)
     }
-    tick()
+    void tick()
   }
 
   add(c: ChatConnection) {
