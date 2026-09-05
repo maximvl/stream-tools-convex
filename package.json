@@ -50,6 +50,7 @@
     "clsx": "^2.1.1",
     "convex-svelte": "^0.0.9",
     "lodash": "^4.17.23",
+    "phaser": "^4.2.1",
     "temporal-polyfill": "^1.0.4"
   }
 }
