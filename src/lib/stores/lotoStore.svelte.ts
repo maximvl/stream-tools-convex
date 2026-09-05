@@ -1,0 +1,657 @@
+import type {
+  ChatMessageWithSource,
+  ChatUser,
+  UserId,
+  VkMention,
+  VkRole,
+  VkRoleId,
+} from '$lib/types'
+import sampleSize from 'lodash/sampleSize'
+import uniq from 'lodash/uniq'
+import { SvelteMap, SvelteSet } from 'svelte/reactivity'
+import { LocalStore } from './localStore.svelte'
+import type {
+  LotoTicket,
+  LotoTicketId,
+  SuperGameReward,
+  VkRewards,
+} from '$lib/components/loto/types'
+import { createContext, untrack } from 'svelte'
+import shuffle from 'lodash/shuffle'
+import { createLotoWinner, updateLotoWinner, type LotoWinner } from '$lib/api/loto'
+import { createMutation } from '@tanstack/svelte-query'
+import type { AuthStore } from './authStore.svelte'
+import type { ChatServer } from '$lib/types'
+import type { ConnKey } from './chatMessagesStore.svelte'
+
+type GameState = 'registration' | 'playing'
+type SuperGameState = 'not_started' | 'in_progress' | 'finished'
+
+const LOTO_MATCH = 'лото'
+
+export type LotoConfig = {
+  ticket_size: number
+  max_number: number
+  roll_animation_time: number
+  enable_chat_tickets: boolean
+  enable_points_tickets: boolean
+  only_subscribers: boolean
+  win_matches_amount: number
+  manual_draw_enabled: boolean
+  // limit_to_90: boolean
+  allow_mods_to_input_numbers: boolean
+  allow_tickets_after_start: boolean
+  super_game_options_amount: number
+  super_game_guesses_amount: number
+  super_game_1_pointers: number
+  super_game_2_pointers: number
+  super_game_3_pointers: number
+  super_game_bonus_guesses_enabled: boolean
+  super_game_vk_rewards: VkRewards
+  super_game_win_score: number
+  super_game_bombs: number
+}
+
+export const DefaultConfig: LotoConfig = {
+  ticket_size: 8,
+  max_number: 99,
+  roll_animation_time: 1500,
+  enable_chat_tickets: true,
+  enable_points_tickets: true,
+  only_subscribers: false,
+  win_matches_amount: 3,
+  manual_draw_enabled: false,
+  // limit_to_90: false,
+  allow_mods_to_input_numbers: false,
+  allow_tickets_after_start: true,
+  super_game_options_amount: 99,
+  super_game_guesses_amount: 7,
+  super_game_1_pointers: 3,
+  super_game_2_pointers: 2,
+  super_game_3_pointers: 1,
+  super_game_bonus_guesses_enabled: true,
+  super_game_vk_rewards: {},
+  super_game_win_score: 1,
+  super_game_bombs: 1,
+}
+
+export class LotoStore {
+  config: LocalStore<LotoConfig>
+
+  drawPool = $state<string[]>([])
+  drawnNumbers = $state<string[]>([])
+  gameState = $state<GameState>('registration')
+  nextNumber = $state<string>('')
+
+  displayNextNumber = $state<string>('')
+  isRolling = $state(false)
+
+  ticketsFromChat = $state<LotoTicket[]>([])
+  ticketsFromPoints = $state<LotoTicket[]>([])
+
+  superGameValues = $state<SuperGameReward[]>([])
+  superGameGuesses = $state<number[]>([])
+  superGameRevealedIds = $state<number[]>([])
+
+  superGameWinChance = $derived.by(() => approximateWinChance(this.config.value))
+
+  superGameTotalGuessesAmount = $derived.by(() => {
+    const base = this.config.value.super_game_guesses_amount
+    if (this.config.value.super_game_bonus_guesses_enabled) {
+      const revealedNonEmpty = this.superGameRevealedIds.filter(
+        (id) =>
+          this.superGameValues[id].kind !== 'empty' && this.superGameValues[id].kind !== 'bomb',
+      )
+      return base + revealedNonEmpty.length
+    }
+    return base
+  })
+  superGameState: SuperGameState = $derived.by(() => {
+    if (this.superGameGuesses.length === 0) {
+      return 'not_started'
+    }
+    return this.superGameRevealedIds.length === this.superGameTotalGuessesAmount
+      ? 'finished'
+      : 'in_progress'
+  })
+
+  superGameScore = $derived.by(() => {
+    const sum = this.superGameRevealedIds.reduce(
+      (acc, id) => acc + getSuperGameRewardScore(this.superGameValues[id]),
+      0,
+    )
+    return sum
+  })
+
+  superGameResult = $derived.by(() => {
+    if (this.superGameScore >= this.config.value.super_game_win_score) {
+      return 'win' as const
+    }
+    if (this.superGameState === 'finished') {
+      return 'lose' as const
+    }
+    return 'in_progress' as const
+  })
+
+  usersById = $state<SvelteMap<string, ChatUser>>(new SvelteMap())
+  openedChats = $state<Set<LotoTicketId>>(new SvelteSet())
+
+  savedWinnerIds = $state<SvelteMap<string, string>>(new SvelteMap())
+
+  authStore: AuthStore | null = null
+
+  setAuthStore(store: AuthStore) {
+    this.authStore = store
+  }
+
+  private isChannelAuthed(server: ChatServer, channel: string): boolean {
+    if (!this.authStore) return true
+    const info = this.authStore.connectionInfo[`${server}/${channel}` as ConnKey]
+    return info?.authenticated ?? true
+  }
+
+  saveLotoWinnerQuery = createMutation(() => ({
+    mutationFn: createLotoWinner,
+    onSuccess: (data) => {
+      data.winners.forEach((w) => {
+        this.savedWinnerIds.set(w.username, w.id)
+      })
+    },
+  }))
+
+  updateLotoWinnerQuery = createMutation(() => ({
+    mutationFn: updateLotoWinner,
+  }))
+
+  constructor(config: LocalStore<LotoConfig>) {
+    this.config = config
+    this.drawPool = Array.from({ length: this.config.value.max_number }, (_, i) =>
+      (i + 1).toString().padStart(2, '0'),
+    )
+
+    $effect(() => {
+      void this.winner
+      this.superGameGuesses = []
+      this.superGameRevealedIds = []
+      this.superGameValues = generateSuperGameValues(this.config.value)
+    })
+
+    $effect(() => {
+      const winner = this.winner
+      if (winner) {
+        untrack(() => {
+          this.openedChats.add(winner.id)
+          if (!this.isChannelAuthed(winner.source.server, winner.source.channel)) return
+          this.saveLotoWinnerQuery.mutate({
+            server: winner.source.server,
+            channel: winner.source.channel,
+            winner: {
+              super_game_status: 'skip',
+              username: winner.owner_name,
+            },
+          })
+        })
+      }
+    })
+
+    $effect(() => {
+      const winner = this.winner
+      const superGameResult = this.superGameResult
+      if (this.superGameState === 'finished' && winner && superGameResult !== 'in_progress') {
+        untrack(() => {
+          const winnerId = this.savedWinnerIds.get(winner.owner_name)
+          if (!winnerId) return
+          if (!this.isChannelAuthed(winner.source.server, winner.source.channel)) return
+
+          this.updateLotoWinnerQuery.mutate({
+            id: winnerId,
+            super_game_status: superGameResult,
+            server: winner.source.server,
+            channel: winner.source.channel,
+          })
+        })
+      }
+    })
+  }
+
+  drawnNumbersSet = $derived(new SvelteSet(this.drawnNumbers))
+
+  allTickets = $derived([...this.ticketsFromChat, ...this.ticketsFromPoints])
+
+  streamerTickets = $derived(
+    this.allTickets.filter(
+      (ticket) =>
+        ticket.owner_name.toLocaleLowerCase() === ticket.source.channel.toLocaleLowerCase(),
+    ),
+  )
+
+  ticketsMatchData: Record<LotoTicketId, { score: number; maxSequentialMatch: number }> =
+    $derived.by(() => {
+      const result: Record<LotoTicketId, { score: number; maxSequentialMatch: number }> = {}
+      for (const ticket of this.ticketsFromChat) {
+        const match = getTicketMatch(ticket, this.drawnNumbersSet)
+        result[ticket.id] = match
+      }
+      for (const ticket of this.ticketsFromPoints) {
+        const match = getTicketMatch(ticket, this.drawnNumbersSet)
+        result[ticket.id] = match
+      }
+      return result
+    })
+
+  ticketsOrdered = $derived.by(() => {
+    if (this.gameState === 'registration') {
+      return this.allTickets.toSorted((t1, t2) => t2.created_at - t1.created_at)
+    }
+    if (this.gameState === 'playing') {
+      return this.allTickets.toSorted((t1, t2) => {
+        const score1 = this.ticketsMatchData[t1.id]?.score ?? 0
+        const score2 = this.ticketsMatchData[t2.id]?.score ?? 0
+        if (score1 !== score2) {
+          return score2 - score1
+        }
+        return t1.created_at - t2.created_at
+      })
+    }
+    return []
+  })
+
+  winner = $derived.by(() => {
+    const firstTicket = this.ticketsOrdered[0]
+    if (firstTicket) {
+      const match = this.ticketsMatchData[firstTicket.id]
+      if (match && match.maxSequentialMatch >= this.config.value.win_matches_amount) {
+        return firstTicket
+      }
+    }
+    return null
+  })
+
+  winnerCandidates = $derived.by(() => {
+    const candidates: SvelteSet<LotoTicketId> = new SvelteSet()
+    if (this.winner) {
+      const winnerMatch = this.ticketsMatchData[this.winner.id]
+      const winnerScore = winnerMatch?.maxSequentialMatch ?? 0
+      for (const ticket of this.ticketsOrdered.slice(0, 20)) {
+        const match = this.ticketsMatchData[ticket.id]
+        const score = match?.maxSequentialMatch ?? 0
+        if (score === winnerScore) {
+          candidates.add(ticket.id)
+        }
+      }
+    }
+    return candidates
+  })
+
+  winnerMatchedNumbers = $derived.by(() => {
+    if (!this.winner) return []
+    const drawnSet = new SvelteSet(this.drawnNumbers)
+    const matches = this.winner.value.map((n) => drawnSet.has(n))
+
+    let maxSeq = 0
+    let maxSeqStartIndex = 0
+    let currentSeq = 0
+    let currentSeqStartIndex = 0
+
+    for (let i = 0; i < matches.length; i++) {
+      if (matches[i]) {
+        if (currentSeq === 0) {
+          currentSeqStartIndex = i
+        }
+        currentSeq++
+        if (currentSeq > maxSeq) {
+          maxSeq = currentSeq
+          maxSeqStartIndex = currentSeqStartIndex
+        }
+      } else {
+        currentSeq = 0
+      }
+    }
+
+    return this.winner.value.slice(maxSeqStartIndex, maxSeqStartIndex + maxSeq)
+  })
+
+  vkRolesRewards = $state<Record<string, VkRole[]>>({})
+  allVkRoles = $derived.by(() => {
+    return Object.values(this.vkRolesRewards).flat()
+  })
+
+  winnersHistory = $state<Record<string, LotoWinner[]>>({})
+  winnersFlatSorted = $derived.by(() => {
+    return Object.values(this.winnersHistory)
+      .flat()
+      .sort((a, b) => b.created_at - a.created_at)
+  })
+  winsByUser = $derived.by(() => {
+    const wins: Record<string, LotoWinner[]> = {}
+    for (const winner of this.winnersFlatSorted) {
+      if (!wins[winner.username]) {
+        wins[winner.username] = []
+      }
+      wins[winner.username].push(winner)
+    }
+    return wins
+  })
+
+  handleMessage = (msg: ChatMessageWithSource) => {
+    if (this.winner && msg.user.id === this.winner.owner_id) {
+      const numbers = parseSuperGameNumbers(msg.text, this.config.value)
+      if (numbers.length > 0) {
+        if (this.superGameGuesses.length < this.superGameTotalGuessesAmount) {
+          this.superGameGuesses = uniq([...this.superGameGuesses, ...numbers]).slice(
+            0,
+            this.superGameTotalGuessesAmount,
+          )
+        }
+        return
+      }
+    }
+
+    if (this.winner) {
+      return
+    }
+
+    if (!msg.text.toLowerCase().includes(LOTO_MATCH)) {
+      return
+    }
+
+    if (this.gameState !== 'registration' && !this.config.value.allow_tickets_after_start) {
+      return
+    }
+
+    const ticket = makeTicket({ chatMessage: msg, pool: this.drawPool, config: this.config.value })
+    const user: ChatUser = {
+      ...msg.user,
+    }
+
+    if (isMessageFromVkBot(msg)) {
+      const mention = msg.vkFields?.mentions[0] as VkMention
+      if (mention) {
+        user.id = mention.id.toString() as UserId
+        user.displayName = mention.displayName
+        const existingUser = this.usersById.get(user.id)
+        if (!existingUser) {
+          user.vkFields = undefined
+          this.usersById.set(user.id, user)
+        }
+
+        this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.owner_id !== user.id)
+
+        ticket.type = 'points'
+        ticket.owner_id = user.id
+        ticket.owner_name = user.displayName
+        this.ticketsFromPoints.push(ticket)
+      }
+      return
+    }
+    if (isMessageHighlightedOnTwitch(msg)) {
+      this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.owner_id !== user.id)
+
+      ticket.type = 'points'
+      this.usersById.set(user.id, user)
+      this.ticketsFromPoints.push(ticket)
+      return
+    }
+    // regular ticket
+    this.ticketsFromChat = this.ticketsFromChat.filter((t) => t.owner_id !== user.id)
+    this.usersById.set(user.id, user)
+    this.ticketsFromChat.push(ticket)
+  }
+
+  start = () => {
+    this.gameState = 'playing'
+  }
+
+  deleteTicket = (ticketId: LotoTicketId) => {
+    this.openedChats.delete(ticketId)
+    this.ticketsFromChat = this.ticketsFromChat.filter((t) => t.id !== ticketId)
+    this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.id !== ticketId)
+  }
+
+  rollNextNumber = async () => {
+    if (this.drawPool.length === 0 || this.isRolling) return
+
+    const randomIndex = Math.floor(Math.random() * this.drawPool.length)
+    const rolledNumber = this.drawPool[randomIndex]
+
+    this.isRolling = true
+    this.displayNextNumber = rolledNumber
+
+    // Wait for the animation to complete
+    await new Promise((resolve) => setTimeout(resolve, this.config.value.roll_animation_time))
+
+    this.isRolling = false
+    this.nextNumber = rolledNumber
+    this.drawnNumbers.push(rolledNumber)
+    this.drawPool = this.drawPool.filter((_, i) => i !== randomIndex)
+  }
+}
+
+export const [getLotoStore, setLotoStore] = createContext<LotoStore>()
+
+function getMaxSequentialMatches(matches: boolean[]) {
+  let maxSeq = 0
+  let currentSeq = 0
+  for (const m of matches) {
+    if (m) {
+      currentSeq++
+      maxSeq = Math.max(maxSeq, currentSeq)
+    } else {
+      currentSeq = 0
+    }
+  }
+  return maxSeq
+}
+
+function getTicketMatch(ticket: LotoTicket, drawnSet: SvelteSet<string>) {
+  const matches = ticket.value.map((n) => drawnSet.has(n))
+
+  const maxSeq = getMaxSequentialMatches(matches)
+  const totalMatches = matches.filter(Boolean).length
+
+  // Weighting:
+  // maxSeq is most important (e.g. * 1000)
+  // totalMatches is next (e.g. * 1)
+  return {
+    score: maxSeq * 1000 + totalMatches,
+    maxSequentialMatch: maxSeq,
+  }
+}
+
+function makeTicket(params: {
+  chatMessage: ChatMessageWithSource
+  pool: string[]
+  config: LotoConfig
+}): LotoTicket {
+  const { chatMessage, pool, config } = params
+
+  const ticketNumber = genTicketNumber({
+    text: chatMessage.text,
+    pool,
+    config,
+  })
+  return {
+    id: crypto.randomUUID() as LotoTicketId,
+    owner_id: chatMessage.user.id,
+    owner_name: chatMessage.user.displayName,
+    value: ticketNumber,
+    color: 'random',
+    variant: 1,
+    type: 'chat',
+    source: chatMessage.source,
+    created_at: chatMessage.timestampMs,
+    isLatecomer: false,
+  }
+}
+
+function genTicketNumber(params: { text: string; pool: string[]; config: LotoConfig }): string[] {
+  const { pool, config } = params
+
+  const text = params.text.trim()
+  if (text.length === 0) {
+    return sampleSize(pool, config.ticket_size)
+  }
+
+  const ticketNumber = uniq(
+    text
+      .split(' ')
+      .map((n) => parseInt(n))
+      .filter((n) => n >= 1 && n <= config.max_number)
+      .map((n) => n.toString().padStart(2, '0'))
+      .filter((n) => pool.includes(n)),
+  )
+
+  if (ticketNumber.length < config.ticket_size) {
+    const sampleOptions = sampleSize(pool, 10)
+    const validOptions = sampleOptions.filter((o) => !ticketNumber.includes(o))
+    ticketNumber.push(...sampleSize(validOptions, config.ticket_size - ticketNumber.length))
+  }
+
+  return ticketNumber.slice(0, config.ticket_size)
+}
+
+const VK_CHAT_BOT_NAME = 'ChatBot'
+
+function isMessageFromVkBot(msg: ChatMessageWithSource) {
+  return msg.source.server === 'vkvideo' && msg.user.displayName === VK_CHAT_BOT_NAME
+}
+
+function isMessageHighlightedOnTwitch(msg: ChatMessageWithSource) {
+  return msg.source.server === 'twitch' && Boolean(msg.user.twitchFields?.highlighted)
+}
+
+export function getLotoConfigStore() {
+  const store = new LocalStore('loto-config', DefaultConfig)
+  for (const key in DefaultConfig) {
+    const typedKey = key as keyof LotoConfig
+    if (store.value[typedKey] === undefined) {
+      store.value = { ...store.value, [typedKey]: DefaultConfig[typedKey] }
+    }
+  }
+  return store
+}
+
+function generateSuperGameValues(config: LotoConfig): SuperGameReward[] {
+  const values: SuperGameReward[] = []
+
+  for (let i = 0; i < config.super_game_1_pointers; i++) {
+    values.push({ kind: 'x1' })
+  }
+
+  for (let i = 0; i < config.super_game_2_pointers; i++) {
+    values.push({ kind: 'x2' })
+  }
+
+  for (let i = 0; i < config.super_game_3_pointers; i++) {
+    values.push({ kind: 'x3' })
+  }
+
+  for (let i = 0; i < config.super_game_bombs; i++) {
+    values.push({ kind: 'bomb' })
+  }
+
+  if (config.super_game_vk_rewards) {
+    for (const roles of Object.values(config.super_game_vk_rewards)) {
+      for (const [roleId, amount] of Object.entries(roles)) {
+        for (let i = 0; i < amount; i++) {
+          values.push({ kind: 'vk-role', roleId: roleId as VkRoleId })
+        }
+      }
+    }
+  }
+
+  for (let i = values.length; i < config.super_game_options_amount; i++) {
+    values.push({ kind: 'empty' })
+  }
+
+  return shuffle(values)
+}
+
+function getSuperGameRewardScore(reward: SuperGameReward): number {
+  switch (reward.kind) {
+    case 'empty':
+      return 0
+    case 'x1':
+      return 1
+    case 'x2':
+      return 2
+    case 'x3':
+      return 3
+    case 'vk-role':
+      return 1
+    case 'bomb':
+      return -1
+    default: {
+      const error: never = reward
+      throw new Error(`Unknown super game reward kind: ${error}`)
+    }
+  }
+}
+
+function parseSuperGameNumbers(message: string, config: LotoConfig): number[] {
+  const cleaned = message
+    .toLocaleLowerCase()
+    .replace(/\+/g, '')
+    .replace(/супер/g, '')
+    .replace(/лото/g, '')
+  const potentialNumbers = cleaned
+    .split(' ')
+    .filter((n) => n !== '')
+    .map(Number)
+
+  if (potentialNumbers.some((n) => isNaN(n))) {
+    return []
+  }
+
+  return uniq(potentialNumbers.filter((n) => n >= 1 && n <= config.super_game_options_amount))
+}
+
+function approximateWinChance(cfg: LotoConfig): number {
+  const N = cfg.super_game_options_amount
+  const k = cfg.super_game_guesses_amount
+
+  const A1 = cfg.super_game_1_pointers
+  const A2 = cfg.super_game_2_pointers
+  const A3 = cfg.super_game_3_pointers
+
+  const B = cfg.super_game_bombs
+
+  const p1 = A1 / N
+  const p2 = A2 / N
+  const p3 = A3 / N
+  const pb = B / N
+
+  // expected score per draw
+  const meanPerDraw = 1 * p1 + 2 * p2 + 3 * p3 - 1 * pb
+
+  // E[X²]
+  const secondMoment = 1 * 1 * p1 + 2 * 2 * p2 + 3 * 3 * p3 + 1 * 1 * pb
+
+  // Var(X) = E[X²] - E[X]²
+  const variancePerDraw = secondMoment - meanPerDraw * meanPerDraw
+
+  const mean = k * meanPerDraw
+
+  const variance = k * variancePerDraw
+
+  const stdDev = Math.sqrt(Math.max(variance, 1e-9))
+
+  const z = (cfg.super_game_win_score - mean) / stdDev
+
+  return 1 - normalCDF(z)
+}
+
+function normalCDF(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x))
+
+  const d = 0.3989423 * Math.exp((-x * x) / 2)
+
+  let prob =
+    d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))))
+
+  if (x > 0) {
+    prob = 1 - prob
+  }
+
+  return prob
+}
