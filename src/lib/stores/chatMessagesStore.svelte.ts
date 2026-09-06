@@ -1,9 +1,7 @@
-import { createQueries } from '@tanstack/svelte-query'
 import { LocalStore } from './localStore.svelte'
 import type { ChatConnection, ChatServer, UserId, ChatUserWithSource, ChatMessageWithSource, ConnectionStatus } from '../types'
-import { chatConnect, fetchMessages } from '../api'
+import type { ChatMessagesResponse } from '../api'
 import { SvelteMap, SvelteSet } from 'svelte/reactivity'
-import { untrack } from 'svelte'
 
 export type ConnKey = string & { readonly __brand: 'ConnKey' }
 
@@ -11,9 +9,31 @@ export function connToKey(connection: ChatConnection): ConnKey {
   return `${connection.server}/${connection.channel}` as ConnKey
 }
 
+// Consecutive failed message polls before a connection is considered dead.
+// A single failed poll must NOT flip the status: that instantly unmounts the
+// messages query, remounts the connect query (which refetches immediately),
+// and on success remounts messages — a zero-delay connect↔messages flap that
+// spams the chat API and freezes the page.
+const MAX_MESSAGE_ERRORS = 5
+
 export class ChatMessagesStore {
   connections = new LocalStore<ChatConnection[]>('chat-connections', [])
   connectionsStatuses = $state<Record<ConnKey, ConnectionStatus>>({})
+  // Plain (non-reactive) per-connection error streaks. Kept out of $state on
+  // purpose: they are write-heavy bookkeeping, not UI state.
+  private messageErrorStreak: Record<string, number> = {}
+
+  // Single choke point for status writes.
+  setStatus(key: ConnKey, status: ConnectionStatus, _reason: string): void {
+    const prev = this.connectionsStatuses[key]
+    if (prev === status) return
+    this.connectionsStatuses[key] = status
+    // Fresh (re)join forgives past message failures so the next polls get a
+    // full streak before they can bounce the connection back.
+    if (status === 'connected') {
+      this.messageErrorStreak[key] = 0
+    }
+  }
   disconnectedConnections = $derived.by(() => {
     return Object.keys(this.connectionsStatuses).filter((key) => {
       const [, channel] = key.split('/')
@@ -51,129 +71,82 @@ export class ChatMessagesStore {
     return users
   })
 
-  connectionQueries = createQueries(() => {
-    // console.log('creating connection queries for:', this.disconnectedConnections)
-    return {
-      queries: this.disconnectedConnections.map((key) => {
-        const [server, channel] = key.split('/')
-        return {
-          queryKey: ['chat-connect', server, channel],
-          queryFn: async () =>
-            chatConnect({
-              server: server as ChatServer,
-              channel,
-            }),
-          refetchInterval: 3000,
-          retry: 0
-        }
-      }),
-      combine: (results) => {
-        // console.log('combining connection queries results:', results)
-        results.forEach((res, idx) => {
-          const key = this.disconnectedConnections[idx]
-          if (!key) return
-          if (res.isFetching) {
-            this.connectionsStatuses[key] = 'connecting'
-            return
-          }
-          if (res.data?.status.status) {
-            this.connectionsStatuses[key] = res.data.status.status
-          } else {
-            this.connectionsStatuses[key] = 'disconnected'
-            console.log(`Failed to connect ${key}:`, res.error, res.data)
-          }
-        })
-        return results
-      },
+  // NOTE: chat polling lives in ChatChannelSync components (one stable
+  // instance per configured channel, singular `createQuery` + `enabled`
+  // gating). It used to be `createQueries` over a derived status list here,
+  // but every status flip rebuilt the observer — with an immediate refetch —
+  // turning fast failures into a tight request storm that froze the page.
+
+  // Called by ChatChannelSync with settled messages results. Owns the error
+  // streak: only sustained failure drops the connection (which re-enables the
+  // connect query). Transient blips self-heal in place without touching
+  // status, so polling observers are never torn down by errors.
+  ingestMessagesResult(
+    connKey: ConnKey,
+    data: ChatMessagesResponse | undefined,
+    err: unknown,
+  ): void {
+    if (err) {
+      const streak = (this.messageErrorStreak[connKey] ?? 0) + 1
+      this.messageErrorStreak[connKey] = streak
+      if (streak >= MAX_MESSAGE_ERRORS) {
+        this.setStatus(connKey, 'disconnected', `messages-streak=${streak}`)
+      }
+      return
     }
-  })
+    if (!data) return
 
-  messagesResponses = createQueries(() => {
-    const nowTs = Date.now()
-    // console.log('creating messages queries for:', this.connectedConnections)
-    return {
-      queries: this.connectedConnections.map((connKey) => {
-        const [server, channel] = connKey.split('/')
-        return {
-          queryKey: ['fetch-chat-messages', server, channel],
-          queryFn: async () => {
-            const ts = untrack(() => this.lastMessageReceivedPerConnection[connKey]?.timestampMs || nowTs) - 10 * 1000
-            const msgs = await fetchMessages({
-              platform: server as ChatServer,
-              channel,
-              ts,
-              textFilter: '',
-            })
-            // console.log(`Fetched messages for ${connKey}:`, msgs)
-            return msgs
-          },
-          refetchInterval: 2000,
-          retry: 0,
-        }
-      }),
-      combine: (results) => {
-        // console.log('combining messages queries results:', results)
-        const messagesIds = new SvelteSet(this.messages.map((msg) => msg.id))
-        results.forEach((res, idx) => {
-          const key = this.connectedConnections[idx]
-          if (!key) return
+    this.messageErrorStreak[connKey] = 0
 
-          if (res.isError) {
-            this.connectionsStatuses[key] = 'disconnected'
-            console.log(`Failed to fetch messages for ${key}:`, res.error, res.data)
-            return
-          }
+    const [server, channel] = connKey.split('/') as [ChatServer, string]
+    const messagesIds = new SvelteSet(this.messages.map((msg) => msg.id))
+    const newMessages: ChatMessageWithSource[] = (data.messages || [])
+      .filter((msg) => !messagesIds.has(msg.id))
+      .map((msg) => ({
+        ...msg,
+        source: { server, channel },
+      }))
 
-          if (res.isFetching) {
-            return
-          }
-
-          const newMessages: ChatMessageWithSource[] = (res.data?.messages || [])
-            .filter((msg) => !messagesIds.has(msg.id))
-            .map((msg) => ({
-              ...msg,
-              source: {
-                server: key.split('/')[0] as ChatServer,
-                channel: key.split('/')[1],
-              },
-            }))
-
-          if (newMessages.length > 0) {
-            this.newMessages = newMessages
-            this.messages.push(...newMessages)
-          }
-
-          if (res.data?.messages) {
-            const lastMsg = res.data.messages[res.data.messages.length - 1]
-            const lastMsgWithSource: ChatMessageWithSource = {
-              ...lastMsg,
-              source: {
-                server: key.split('/')[0] as ChatServer,
-                channel: key.split('/')[1],
-              },
-            }
-            if (this.lastMessageReceivedPerConnection[key]) {
-              if (lastMsg && lastMsg.timestampMs > this.lastMessageReceivedPerConnection[key].timestampMs) {
-                this.lastMessageReceivedPerConnection[key] = lastMsgWithSource
-              }
-            } else if (lastMsg) {
-              this.lastMessageReceivedPerConnection[key] = lastMsgWithSource
-            }
-          }
-        })
-        return results
-      },
+    if (newMessages.length > 0) {
+      this.newMessages = newMessages
+      this.messages.push(...newMessages)
     }
-  })
+
+    if (data.messages) {
+      const lastMsg = data.messages[data.messages.length - 1]
+      const lastMsgWithSource: ChatMessageWithSource = {
+        ...lastMsg,
+        source: { server, channel },
+      }
+      if (this.lastMessageReceivedPerConnection[connKey]) {
+        if (lastMsg && lastMsg.timestampMs > this.lastMessageReceivedPerConnection[connKey].timestampMs) {
+          this.lastMessageReceivedPerConnection[connKey] = lastMsgWithSource
+        }
+      } else if (lastMsg) {
+        this.lastMessageReceivedPerConnection[connKey] = lastMsgWithSource
+      }
+    }
+  }
 
   constructor() {
     this.connections.value.forEach((c) => {
-      this.connectionsStatuses[connToKey(c)] = 'disconnected'
+      this.setStatus(connToKey(c), 'disconnected', 'init')
     })
   }
 
   updateConnections(connections: ChatConnection[]) {
-    console.log('updating connections', connections)
+    // Skip no-op writes: replacing `connectionsStatuses`/`connections.value`
+    // with equal-content copies retriggers every derived query list, which
+    // tears down and immediately refetches all polling queries (visible as a
+    // duplicate connect burst on every page load via the dialog mount sync).
+    const prev = this.connections.value
+    const same =
+      prev.length === connections.length &&
+      prev.every(
+        (c, i) => c.server === connections[i]?.server && c.channel === connections[i]?.channel,
+      ) &&
+      connections.every((c) => connToKey(c) in this.connectionsStatuses)
+    if (same) return
     // Keep old statuses for existing connections
     const newStatuses: Record<ConnKey, ConnectionStatus> = {}
     connections.forEach((c) => {
@@ -191,7 +164,7 @@ export class ChatMessagesStore {
       channel: '',
     }
     this.connections.value.push(newConn)
-    this.connectionsStatuses[connToKey(newConn)] = 'disconnected'
+    this.setStatus(connToKey(newConn), 'disconnected', 'add-connection')
   }
 
   removeConnection(connection: ChatConnection) {
@@ -201,6 +174,7 @@ export class ChatMessagesStore {
       if (k !== key) next[k] = this.connectionsStatuses[k]
     }
     this.connectionsStatuses = next
+    delete this.messageErrorStreak[key]
     this.connections.value = this.connections.value.filter((c) => c !== connection)
   }
 

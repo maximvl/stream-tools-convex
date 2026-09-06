@@ -4,11 +4,24 @@
   import { type ChatServer } from '$lib/types'
   import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
   import { getLotoStore } from '$lib/stores/lotoStore.svelte'
+  import { connToKey } from '$lib/stores/chatMessagesStore.svelte'
   import ServerIcon from '../common/ServerIcon.svelte'
   import WinnersChannel from './WinnersChannel.svelte'
 
   const messagesStore = getChatStore()
   const lotoStore = getLotoStore()
+
+  // Public history loads on page load for every configured channel —
+  // no auth, no chat handshake required. Auth gates saving only.
+  const channelKeys = $derived(
+    Array.from(
+      new Set(
+        messagesStore.connections.value
+          .filter((c) => c.channel.trim() !== '')
+          .map((c) => connToKey(c)),
+      ),
+    ),
+  )
 
   function formatTime(timestamp: number) {
     const formatter = new Intl.DateTimeFormat('ru-RU', {
@@ -23,7 +36,7 @@
   }
 </script>
 
-{#each messagesStore.connectedConnections as connKey (connKey)}
+{#each channelKeys as connKey (connKey)}
   <WinnersChannel {connKey} />
 {/each}
 

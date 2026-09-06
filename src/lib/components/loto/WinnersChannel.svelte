@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One reactive Convex subscription per connected channel.
+  // One reactive Convex subscription per configured channel.
   // Replaces the TanStack `createQueries(fetchLotoWinners)` fan-out:
   // data arrives live without polling and lands in winnersHistory.
   import { useQuery } from 'convex-svelte'

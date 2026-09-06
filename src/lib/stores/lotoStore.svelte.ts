@@ -146,7 +146,9 @@ export class LotoStore {
   private isChannelAuthed(server: ChatServer, channel: string): boolean {
     if (!this.authStore) return true
     const info = this.authStore.connectionInfo[`${server}/${channel}` as ConnKey]
-    return info?.authenticated ?? true
+    // Fail closed: unknown status means not authed. Auth gates saving only —
+    // loading history is public and never consults this.
+    return info?.authenticated ?? false
   }
 
   // Direct Convex writes (no TanStack wrapper — TanStack stays reserved for
