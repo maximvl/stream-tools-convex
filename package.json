@@ -13,7 +13,16 @@
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy"
+    "convex:deploy": "convex deploy",
+    "local:up": "docker compose -f local/docker-compose.yml up -d && sh local/ensure-key.sh && echo 'Next: pnpm local:push (push backend code), pnpm local:web (frontend). Dashboard: http://localhost:6791'",
+    "local:down": "docker compose -f local/docker-compose.yml down",
+    "local:reset": "docker compose -f local/docker-compose.yml down -v && rm -f local/.admin-key local/.env",
+    "local:push": "sh local/with-env.sh ./node_modules/.bin/convex dev --once --env-file local/.env",
+    "local:dev": "sh local/with-env.sh ./node_modules/.bin/convex dev --env-file local/.env",
+    "local:web": "sh local/web.sh",
+    "local:run": "sh local/with-env.sh ./node_modules/.bin/convex run",
+    "local:data": "sh local/with-env.sh ./node_modules/.bin/convex data",
+    "local:logs": "docker compose -f local/docker-compose.yml logs -f backend"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",

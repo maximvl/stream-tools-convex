@@ -6,3 +6,10 @@ dist
 
 *.sqlite3
 .env.production
+
+local/.admin-key
+local/.env
+local/.env.web-backup
+local/.env.cloud-backup
+local/.env.web-backup
+local/.swapped
