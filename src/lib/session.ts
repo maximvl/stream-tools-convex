@@ -3,7 +3,7 @@
 // stream channel in localStorage (keyed `convex-app:session:<channel>`).
 
 export function formatStreamChannel(server: string, channel: string): string {
-  return `${server}/${channel}`
+  return `${server.trim().toLowerCase()}/${channel.trim().toLowerCase()}`
 }
 
 function storageKey(streamChannel: string): string {

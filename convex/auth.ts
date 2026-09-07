@@ -1,6 +1,7 @@
 import { query, mutation, action } from './_generated/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
+import { parseIdentity, cacheKeyFor } from './userIdentity'
 
 const SESSION_LEN = 15
 const AUTH_KEY_LEN = 5
@@ -10,10 +11,6 @@ function makeId(len: number): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   const bytes = crypto.getRandomValues(new Uint8Array(len))
   return Array.from(bytes, (b) => chars[b % chars.length]).join('')
-}
-
-function cacheKeyFor(streamChannel: string, sessionId: string): string {
-  return `${streamChannel}${sessionId}`
 }
 
 function nowSec(): number {
@@ -27,16 +24,16 @@ function nowSec(): number {
 export const check = mutation({
   args: { stream_channel: v.string(), session_id: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const channelLower = args.stream_channel.toLowerCase()
+    const { platform, user_slug } = parseIdentity(args.stream_channel)
     const session_id = args.session_id ?? makeId(SESSION_LEN)
     const saved = await ctx.db
       .query('user_auth')
-      .withIndex('by_channel_lower', (q) => q.eq('channel_lower', channelLower))
+      .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
       .unique()
     if (args.session_id && saved && saved.session_id === args.session_id) {
       return { authenticated: true as const, session_id }
     }
-    const cacheKey = cacheKeyFor(args.stream_channel, session_id)
+    const cacheKey = cacheKeyFor(platform, user_slug, session_id)
     const now = Date.now()
     const existing = await ctx.db
       .query('auth_keys')
@@ -49,7 +46,8 @@ export const check = mutation({
     if (existing) await ctx.db.delete(existing._id)
     await ctx.db.insert('auth_keys', {
       cache_key: cacheKey,
-      stream_channel: args.stream_channel,
+      user_slug,
+      platform,
       session_id,
       auth_key,
       created_at: now,
@@ -62,13 +60,16 @@ export const check = mutation({
 export const isAuthenticated = query({
   args: { stream_channel: v.string(), session_id: v.string() },
   handler: async (ctx, args) => {
-    const saved = await ctx.db
-      .query('user_auth')
-      .withIndex('by_channel_lower', (q) =>
-        q.eq('channel_lower', args.stream_channel.toLowerCase()),
-      )
-      .unique()
-    return { authenticated: saved?.session_id === args.session_id }
+    try {
+      const { platform, user_slug } = parseIdentity(args.stream_channel)
+      const saved = await ctx.db
+        .query('user_auth')
+        .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
+        .unique()
+      return { authenticated: saved?.session_id === args.session_id }
+    } catch {
+      return { authenticated: false }
+    }
   },
 })
 
@@ -77,14 +78,25 @@ export const isAuthenticated = query({
 export const confirm = action({
   args: { stream_channel: v.string(), session_id: v.string() },
   handler: async (ctx, args): Promise<{ authenticated: boolean }> => {
-    const keyRow: { auth_key: string } | null = await ctx.runQuery(internal.authLib.getKey, {
-      stream_channel: args.stream_channel,
-      session_id: args.session_id,
-    })
+    let keyRow: { auth_key: string } | null
+    try {
+      keyRow = await ctx.runQuery(internal.authLib.getKey, {
+        stream_channel: args.stream_channel,
+        session_id: args.session_id,
+      })
+    } catch {
+      return { authenticated: false }
+    }
     if (!keyRow) return { authenticated: false }
-    const parts = args.stream_channel.split('/')
-    if (parts.length < 2) return { authenticated: false }
-    const [server, channel] = parts as [string, string]
+    let server: string
+    let channel: string
+    try {
+      const identity = parseIdentity(args.stream_channel)
+      server = identity.platform
+      channel = identity.user_slug
+    } catch {
+      return { authenticated: false }
+    }
     const tsFrom = nowSec() - 5 * 60
     const params = new URLSearchParams({ server, channel, tsFrom: String(tsFrom) })
     const res = await fetch(`https://chats.eventlab.dev/api/chat_messages?${params.toString()}`)

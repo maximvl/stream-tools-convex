@@ -14,6 +14,8 @@ import type * as crons from "../crons.js";
 import type * as frontendLogs from "../frontendLogs.js";
 import type * as lotoWinners from "../lotoWinners.js";
 import type * as maintenance from "../maintenance.js";
+import type * as migration from "../migration.js";
+import type * as userIdentity from "../userIdentity.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +30,8 @@ declare const fullApi: ApiFromModules<{
   frontendLogs: typeof frontendLogs;
   lotoWinners: typeof lotoWinners;
   maintenance: typeof maintenance;
+  migration: typeof migration;
+  userIdentity: typeof userIdentity;
 }>;
 
 /**

@@ -1,17 +1,26 @@
 import { query, mutation, type MutationCtx } from './_generated/server'
 import { v } from 'convex/values'
 import { superGameStatus } from './schema'
+import { parseIdentity } from './userIdentity'
 
 async function requireAuth(
   ctx: MutationCtx,
   streamChannel: string,
   sessionId: string,
 ): Promise<void> {
+  const { platform, user_slug } = (() => {
+    try {
+      return parseIdentity(streamChannel)
+    } catch {
+      throw new Error('Not authenticated for this stream channel')
+    }
+  })()
   const saved = await ctx.db
     .query('user_auth')
-    .withIndex('by_channel_lower', (q) => q.eq('channel_lower', streamChannel.toLowerCase()))
+    .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
     .unique()
-  if (!saved || saved.session_id !== sessionId) throw new Error('Not authenticated for this stream channel')
+  if (!saved || saved.session_id !== sessionId)
+    throw new Error('Not authenticated for this stream channel')
 }
 
 // GET /api/loto_winners (public)

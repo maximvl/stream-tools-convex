@@ -1,5 +1,6 @@
 import { query, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { parseIdentity, streamChannelFor } from './userIdentity'
 
 // POST /api/frontend_logs validation mirrors Handlers.fs:130-138
 function validateLogs(logs: string[]): string | null {
@@ -19,10 +20,12 @@ export const create = mutation({
       .query('user_auth')
       .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
       .collect()
-    if (channels.length === 0) throw new Error('Not authenticated (no stream channel associated with session)')
+    if (channels.length === 0)
+      throw new Error('Not authenticated (no stream channel associated with session)')
     channels.sort((a, b) => b.updated_at - a.updated_at)
-    const streamChannel = channels[0]?.stream_channel
-    if (!streamChannel) throw new Error('Not authenticated (no stream channel associated with session)')
+    const owner = channels[0]
+    if (!owner) throw new Error('Not authenticated (no stream channel associated with session)')
+    const streamChannel = streamChannelFor(owner.platform, owner.user_slug)
     const createdAt = Math.floor(Date.now() / 1000)
     for (const logText of args.logs) {
       await ctx.db.insert('frontend_logs', {
@@ -47,13 +50,31 @@ export const list = query({
       .query('user_auth')
       .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
       .collect()
-    if (channels.length === 0) throw new Error('Not authenticated (no stream channel associated with session)')
+    if (channels.length === 0)
+      throw new Error('Not authenticated (no stream channel associated with session)')
+    const fallback = [...channels].sort((a, b) => b.updated_at - a.updated_at)[0]
+    if (!fallback) throw new Error('Not authenticated (no stream channel associated with session)')
     const resolved =
       args.stream_channel && args.stream_channel.trim().length > 0
-        ? args.stream_channel
-        : [...channels].sort((a, b) => b.updated_at - a.updated_at)[0]?.stream_channel
+        ? (() => {
+            try {
+              const identity = parseIdentity(args.stream_channel as string)
+              return streamChannelFor(identity.platform, identity.user_slug)
+            } catch {
+              throw new Error('Not authenticated for this stream channel')
+            }
+          })()
+        : streamChannelFor(fallback.platform, fallback.user_slug)
     if (!resolved) throw new Error('Not authenticated (no stream channel associated with session)')
-    const owned = channels.some((c) => c.stream_channel.toLowerCase() === resolved.toLowerCase())
+    let wanted: { platform: string; user_slug: string }
+    try {
+      wanted = parseIdentity(resolved)
+    } catch {
+      throw new Error('Not authenticated for this stream channel')
+    }
+    const owned = channels.some(
+      (c) => c.platform === wanted.platform && c.user_slug === wanted.user_slug,
+    )
     if (!owned) throw new Error('Not authenticated for this stream channel')
     const limit = args.limit && args.limit > 0 && args.limit <= 1000 ? args.limit : 100
     const logs = await ctx.db
