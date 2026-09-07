@@ -38,7 +38,7 @@ export class AuthStore {
   confirmAuth(connKey: ConnKey, max_attempts: number = CONFIRM_MAX_ATTEMPTS) {
     const [server, channel] = connKey.split('/') as [ChatServer, string]
     const stream_channel = `${server}/${channel}`
-    const session_id = getSessionId(stream_channel)
+    const session_id = getSessionId()
     const info = this.connectionInfo[connKey]
     if (!session_id) {
       if (info) info.isConfirming = false

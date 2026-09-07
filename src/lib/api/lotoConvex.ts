@@ -34,11 +34,12 @@ export async function authCheck(params: {
   channel: string
 }): Promise<AuthCheckResult> {
   const stream_channel = formatStreamChannel(params.server, params.channel)
+  // No session yet → the backend mints one; we persist whatever it returns.
   const res = await convexClient().mutation(api.auth.check, {
     stream_channel,
-    session_id: getSessionId(stream_channel),
+    session_id: getSessionId(),
   })
-  setSessionId(stream_channel, res.session_id)
+  setSessionId(res.session_id)
   if (res.authenticated) return { authenticated: true, session_id: res.session_id }
   return { authenticated: false, auth_key: res.auth_key, session_id: res.session_id }
 }
@@ -49,7 +50,7 @@ export async function confirmAuth(params: {
   channel: string
 }): Promise<{ authenticated: boolean }> {
   const stream_channel = formatStreamChannel(params.server, params.channel)
-  const session_id = getSessionId(stream_channel)
+  const session_id = getSessionId()
   if (!session_id) return { authenticated: false }
   return await convexClient().action(api.auth.confirm, { stream_channel, session_id })
 }
@@ -80,7 +81,7 @@ export async function createLotoWinners(params: {
   winners: { username: string; super_game_status: SuperGameStatus }[]
 }): Promise<{ winners: LotoWinner[] }> {
   const stream_channel = formatStreamChannel(params.server, params.channel)
-  const session_id = getSessionId(stream_channel)
+  const session_id = getSessionId()
   if (!session_id) throw new Error('No session for this channel. Call authCheck first.')
   const res = await convexClient().mutation(api.lotoWinners.createBatch, {
     stream_channel,
@@ -105,7 +106,7 @@ export async function updateLotoWinner(params: {
   channel: string
   super_game_status: SuperGameStatus
 }): Promise<LotoWinner> {
-  const session_id = getSessionId(formatStreamChannel(params.server, params.channel))
+  const session_id = getSessionId()
   if (!session_id) throw new Error('No session for this channel. Call authCheck first.')
   const updated = await convexClient().mutation(api.lotoWinners.updateStatus, {
     id: params.id as Id<'loto_winners'>,
@@ -123,23 +124,8 @@ export async function updateLotoWinner(params: {
 
 // Mirrors POST /api/frontend_logs
 export async function createFrontendLogs(logs: string[]): Promise<void> {
-  // Session is channel-agnostic here; Convex resolves the channel from user_auth.
-  const session_id = pickActiveSession()
+  // Session is browser-wide; Convex resolves the channel from user_auth.
+  const session_id = getSessionId()
   if (!session_id) throw new Error('No session yet. Call authCheck first.')
   await convexClient().mutation(api.frontendLogs.create, { session_id, logs })
-}
-
-function pickActiveSession(): string | undefined {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key?.startsWith('convex-app:session:')) {
-        const value = localStorage.getItem(key)
-        if (value) return value
-      }
-    }
-  } catch {
-    return undefined
-  }
-  return undefined
 }

@@ -7,7 +7,7 @@
   import { useConvexClient, useQuery } from 'convex-svelte'
   import { untrack } from 'svelte'
   import { api } from '../../../../convex/_generated/api.js'
-  import { ensureSessionId, setSessionId } from '$lib/session'
+  import { getSessionId, mintSingleFlight, setSessionId } from '$lib/session'
   import type { ChatServer } from '$lib/types'
   import type { ConnKey } from '$lib/stores/chatMessagesStore.svelte'
   import type { AuthStore } from '$lib/stores/authStore.svelte'
@@ -20,13 +20,13 @@
   const channel = $derived(connKey.split('/')[1] as string)
   const stream_channel = $derived(`${server}/${channel}`)
 
-  // Stable per-channel session. Resolved in an effect (not init) so the query
-  // args stay reactive; until then the live query runs session-less.
+  // Single browser-wide session shared by all channels, minted by the
+  // backend only. Resolved in an effect (not init) so the query args stay
+  // reactive; until then the live query runs session-less.
   let sessionId = $state<string>()
   $effect(() => {
-    const sc = stream_channel
     untrack(() => {
-      sessionId = ensureSessionId(sc)
+      sessionId = getSessionId()
     })
   })
 
@@ -34,17 +34,28 @@
   let boot = $state<Boot>()
   let booting = $state(false)
 
-  // One-shot bootstrap: verified session + fresh auth key in one call.
+  // One-shot bootstrap: verified session + fresh auth key in one call. When
+  // no session is stored yet the backend mints one (single-flight across all
+  // mounted channels); afterwards this channel checks in under it.
   $effect(() => {
     const sc = stream_channel
-    const sid = sessionId
-    if (!sid || boot || booting) return
+    if (boot || booting) return
     untrack(() => {
       booting = true
-      convex
-        .mutation(api.auth.check, { stream_channel: sc, session_id: sid })
-        .then((res) => {
-          setSessionId(sc, res.session_id)
+      mintSingleFlight(async () => {
+        const res = await convex.mutation(api.auth.check, {
+          stream_channel: sc,
+          session_id: getSessionId(),
+        })
+        return res.session_id
+      })
+        .then(async (sid) => {
+          const res = await convex.mutation(api.auth.check, {
+            stream_channel: sc,
+            session_id: sid,
+          })
+          setSessionId(res.session_id)
+          sessionId = res.session_id
           boot = res.authenticated
             ? { authenticated: true }
             : { authenticated: false, authKey: res.auth_key }

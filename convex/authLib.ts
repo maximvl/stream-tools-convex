@@ -1,6 +1,6 @@
 import { query, internalQuery, internalMutation } from './_generated/server'
 import { v } from 'convex/values'
-import { parseIdentity, cacheKeyFor } from './userIdentity'
+import { parseIdentity, cacheKeyFor, streamChannelFor } from './userIdentity'
 
 // Internal helpers used by the `confirm` action (avoids circular imports).
 export const getKey = internalQuery({
@@ -55,5 +55,24 @@ export const sessionOwnsChannel = query({
     } catch {
       return false
     }
+  },
+})
+
+// All stream channels authenticated under one browser-wide session.
+// One session owns many channels: `user_auth` holds one row per channel
+// sharing the session id.
+export const channelsForSession = query({
+  args: { session_id: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query('user_auth')
+      .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
+      .collect()
+    return rows.map((r) => ({
+      stream_channel: streamChannelFor(r.platform, r.user_slug),
+      platform: r.platform,
+      user_slug: r.user_slug,
+      updated_at: r.updated_at,
+    }))
   },
 })
