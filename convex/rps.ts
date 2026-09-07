@@ -1,24 +1,51 @@
-import { mutation, query } from './_generated/server'
+import { mutation, query, type MutationCtx } from './_generated/server'
 import { v } from 'convex/values'
 import { streamChannelFor } from './userIdentity'
 
 const ROUND_SECONDS = 10
 
-// Creates a tournament from a bare owner session id. The session owns one or
-// more stream channels (one `user_auth` row per channel sharing the session).
-// No title is stored — clients derive it from `stream_channels`.
+// All stream identities (platform/slug pairs) authenticated under a session.
+// Sessions are lookup keys only — identity lives in user_auth rows.
+async function identitiesForSession(ctx: MutationCtx, session_id: string) {
+  const rows = await ctx.db
+    .query('user_auth')
+    .withIndex('by_session', (q) => q.eq('session_id', session_id))
+    .collect()
+  return rows.map((r) => ({
+    platform: r.platform,
+    user_slug: r.user_slug,
+    stream_channel: streamChannelFor(r.platform, r.user_slug),
+  }))
+}
+
+// Owner gate for future owner-only actions (start, cancel): the caller's
+// session must resolve to the tournament's owner identity. A new browser
+// that re-proves the same channel passes too.
+export async function requireOwner(
+  ctx: MutationCtx,
+  tournament: { owner_stream_channel: string },
+  session_id: string,
+): Promise<void> {
+  const owned = await identitiesForSession(ctx, session_id)
+  if (!owned.some((o) => o.stream_channel === tournament.owner_stream_channel))
+    throw new Error('Not the tournament owner')
+}
+
+// Creates a tournament from a bare owner session id: the session is only
+// used to fetch the owner's stream channels; the stored owner reference is
+// the channel identity. No title is stored — clients derive it from
+// `stream_channels`.
 export const create = mutation({
   args: { owner_session_id: v.string() },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query('user_auth')
-      .withIndex('by_session', (q) => q.eq('session_id', args.owner_session_id))
-      .collect()
-    if (rows.length === 0) throw new Error('No authenticated stream channel for this session')
-    const sorted = [...rows].sort((a, b) => b.updated_at - a.updated_at)
+    const owned = await identitiesForSession(ctx, args.owner_session_id)
+    if (owned.length === 0) throw new Error('No authenticated stream channel for this session')
+    const sorted = [...owned].sort((a, b) => b.stream_channel.localeCompare(a.stream_channel))
+    const primary = sorted[0]
+    if (!primary) throw new Error('No authenticated stream channel for this session')
     const id = await ctx.db.insert('rps_tournaments', {
-      stream_channels: sorted.map((r) => streamChannelFor(r.platform, r.user_slug)),
-      owner_session_id: args.owner_session_id,
+      owner_stream_channel: primary.stream_channel,
+      stream_channels: sorted.map((r) => r.stream_channel),
       status: 'registration',
       current_round: 0,
       round_seconds: ROUND_SECONDS,
@@ -62,6 +89,7 @@ export const get = query({
     if (!t) return null
     return {
       id: t._id,
+      owner_stream_channel: t.owner_stream_channel,
       stream_channels: t.stream_channels,
       status: t.status,
       current_round: t.current_round,
@@ -98,28 +126,37 @@ export const participants = query({
   },
 })
 
-// Entries belonging to one viewer session — the viewer page renders one
-// board per entry (multi-entry when the code went into several chats).
+// Entries for the caller's identities: the session resolves to
+// (platform, slug) identities via user_auth, and entries are matched by
+// identity — so a new browser that re-proves the same channel sees the same
+// boards. One board per entry (multi-entry when the code went into several
+// chats).
 export const myEntries = query({
   args: { tournament_id: v.id('rps_tournaments'), viewer_session_id: v.string() },
   handler: async (ctx, args) => {
     const rows = await ctx.db
-      .query('rps_participants')
-      .withIndex('by_viewer_session', (q) =>
-        q.eq('tournament_id', args.tournament_id).eq('viewer_session_id', args.viewer_session_id),
-      )
+      .query('user_auth')
+      .withIndex('by_session', (q) => q.eq('session_id', args.viewer_session_id))
       .collect()
-    return rows.map((p) => ({
-      id: p._id,
-      platform: p.platform,
-      user_slug: p.user_slug,
-      display_name: p.display_name,
-      via_stream_channel: p.via_stream_channel,
-      wins: p.wins,
-      status: p.status,
-      eliminated_in_round: p.eliminated_in_round,
-      is_bot: p.is_bot,
-    }))
+    if (rows.length === 0) return []
+    const owned = new Set(rows.map((r) => `${r.platform}|${r.user_slug}`))
+    const participants = await ctx.db
+      .query('rps_participants')
+      .withIndex('by_tournament', (q) => q.eq('tournament_id', args.tournament_id))
+      .collect()
+    return participants
+      .filter((p) => owned.has(`${p.platform}|${p.user_slug}`))
+      .map((p) => ({
+        id: p._id,
+        platform: p.platform,
+        user_slug: p.user_slug,
+        display_name: p.display_name,
+        via_stream_channel: p.via_stream_channel,
+        wins: p.wins,
+        status: p.status,
+        eliminated_in_round: p.eliminated_in_round,
+        is_bot: p.is_bot,
+      }))
   },
 })
 
@@ -171,7 +208,6 @@ export const join = mutation({
         user_slug: p.user_slug,
         display_name: p.display_name,
         via_stream_channel: p.via_stream_channel,
-        viewer_session_id: args.viewer_session_id,
         wins: 0,
         status: 'active',
         is_bot: false,

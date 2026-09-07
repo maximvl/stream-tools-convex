@@ -53,8 +53,11 @@ export default defineSchema({
     .index('by_session', ['session_id']),
 
   rps_tournaments: defineTable({
+    // Owner identity as stream_channel (`platform/slug`). Sessions are only
+    // lookup keys: a new browser re-auths the same channel and resolves back
+    // to this identity.
+    owner_stream_channel: v.string(),
     stream_channels: v.array(v.string()),
-    owner_session_id: v.string(),
     status: v.union(v.literal('registration'), v.literal('running'), v.literal('finished')),
     current_round: v.number(),
     round_seconds: v.number(),
@@ -64,7 +67,7 @@ export default defineSchema({
     finished_at: v.optional(v.number()),
   })
     .index('by_status', ['status'])
-    .index('by_owner_session', ['owner_session_id']),
+    .index('by_owner', ['owner_stream_channel']),
 
   rps_participants: defineTable({
     tournament_id: v.id('rps_tournaments'),
@@ -72,7 +75,9 @@ export default defineSchema({
     user_slug: v.string(),
     display_name: v.string(),
     via_stream_channel: v.string(),
-    viewer_session_id: v.string(),
+    // No session stored: identity is (platform, user_slug, via). A session
+    // only resolves to identities via user_auth, so a new browser that
+    // re-proves the same channel sees the same entries.
     wins: v.number(),
     status: v.union(v.literal('active'), v.literal('eliminated'), v.literal('champion')),
     eliminated_in_round: v.optional(v.number()),
@@ -80,7 +85,7 @@ export default defineSchema({
     created_at: v.number(),
   })
     .index('by_tournament', ['tournament_id'])
-    .index('by_viewer_session', ['tournament_id', 'viewer_session_id']),
+    .index('by_identity', ['tournament_id', 'platform', 'user_slug']),
 
   rps_matches: defineTable({
     tournament_id: v.id('rps_tournaments'),
