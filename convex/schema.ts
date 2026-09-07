@@ -55,11 +55,7 @@ export default defineSchema({
   rps_tournaments: defineTable({
     stream_channels: v.array(v.string()),
     owner_session_id: v.string(),
-    status: v.union(
-      v.literal('registration'),
-      v.literal('running'),
-      v.literal('finished'),
-    ),
+    status: v.union(v.literal('registration'), v.literal('running'), v.literal('finished')),
     current_round: v.number(),
     round_seconds: v.number(),
     winner_participant_id: v.optional(v.id('rps_participants')),
@@ -78,11 +74,7 @@ export default defineSchema({
     via_stream_channel: v.string(),
     viewer_session_id: v.string(),
     wins: v.number(),
-    status: v.union(
-      v.literal('active'),
-      v.literal('eliminated'),
-      v.literal('champion'),
-    ),
+    status: v.union(v.literal('active'), v.literal('eliminated'), v.literal('champion')),
     eliminated_in_round: v.optional(v.number()),
     is_bot: v.boolean(),
     created_at: v.number(),

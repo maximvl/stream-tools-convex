@@ -16,6 +16,8 @@ import type * as lotoWinners from "../lotoWinners.js";
 import type * as maintenance from "../maintenance.js";
 import type * as migration from "../migration.js";
 import type * as rps from "../rps.js";
+import type * as rpsAuth from "../rpsAuth.js";
+import type * as rpsLib from "../rpsLib.js";
 import type * as userIdentity from "../userIdentity.js";
 
 import type {
@@ -33,6 +35,8 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   migration: typeof migration;
   rps: typeof rps;
+  rpsAuth: typeof rpsAuth;
+  rpsLib: typeof rpsLib;
   userIdentity: typeof userIdentity;
 }>;
 
