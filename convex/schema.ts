@@ -51,4 +51,75 @@ export default defineSchema({
   })
     .index('by_channel', ['stream_channel'])
     .index('by_session', ['session_id']),
+
+  rps_tournaments: defineTable({
+    stream_channels: v.array(v.string()),
+    owner_session_id: v.string(),
+    status: v.union(
+      v.literal('registration'),
+      v.literal('running'),
+      v.literal('finished'),
+    ),
+    current_round: v.number(),
+    round_seconds: v.number(),
+    winner_participant_id: v.optional(v.id('rps_participants')),
+    created_at: v.number(),
+    started_at: v.optional(v.number()),
+    finished_at: v.optional(v.number()),
+  })
+    .index('by_status', ['status'])
+    .index('by_owner_session', ['owner_session_id']),
+
+  rps_participants: defineTable({
+    tournament_id: v.id('rps_tournaments'),
+    platform,
+    user_slug: v.string(),
+    display_name: v.string(),
+    via_stream_channel: v.string(),
+    viewer_session_id: v.string(),
+    wins: v.number(),
+    status: v.union(
+      v.literal('active'),
+      v.literal('eliminated'),
+      v.literal('champion'),
+    ),
+    eliminated_in_round: v.optional(v.number()),
+    is_bot: v.boolean(),
+    created_at: v.number(),
+  })
+    .index('by_tournament', ['tournament_id'])
+    .index('by_viewer_session', ['tournament_id', 'viewer_session_id']),
+
+  rps_matches: defineTable({
+    tournament_id: v.id('rps_tournaments'),
+    round: v.number(),
+    a_id: v.id('rps_participants'),
+    b_id: v.id('rps_participants'),
+    move_a: v.optional(v.union(v.literal('rock'), v.literal('paper'), v.literal('scissors'))),
+    move_b: v.optional(v.union(v.literal('rock'), v.literal('paper'), v.literal('scissors'))),
+    status: v.union(v.literal('pending'), v.literal('resolved')),
+    winner_id: v.optional(v.id('rps_participants')),
+    is_draw: v.optional(v.boolean()),
+    deadline_at: v.number(),
+    resolved_at: v.optional(v.number()),
+    created_at: v.number(),
+  })
+    .index('by_tournament_round', ['tournament_id', 'round'])
+    .index('by_tournament', ['tournament_id']),
+
+  rps_codes: defineTable({
+    tournament_id: v.id('rps_tournaments'),
+    viewer_session_id: v.string(),
+    auth_key: v.string(),
+    proofs: v.array(
+      v.object({
+        via_stream_channel: v.string(),
+        platform,
+        user_slug: v.string(),
+        display_name: v.string(),
+      }),
+    ),
+    created_at: v.number(),
+    expires_at: v.number(),
+  }).index('by_lookup', ['tournament_id', 'viewer_session_id']),
 })
