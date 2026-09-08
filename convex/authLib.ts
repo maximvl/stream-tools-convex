@@ -57,14 +57,21 @@ export async function authChannelsForSession(
     .query('user_auth')
     .withIndex('by_session', (q) => q.eq('session_id', session_id))
     .collect()
+  // TEMP-MIGRATION: skip rows not yet converted to (platform, user_slug).
   return rows
-    .map((r) => ({
-      platform: r.platform,
-      user_slug: r.user_slug,
-      stream_channel: streamChannelFor(r.platform, r.user_slug),
-      via_channel: r.via_channel,
-      updated_at: r.updated_at,
-    }))
+    .flatMap((r) =>
+      r.platform && r.user_slug
+        ? [
+            {
+              platform: r.platform,
+              user_slug: r.user_slug,
+              stream_channel: streamChannelFor(r.platform, r.user_slug),
+              via_channel: r.via_channel,
+              updated_at: r.updated_at,
+            },
+          ]
+        : [],
+    )
     .sort(compareChannelPriority)
 }
 
@@ -150,14 +157,21 @@ export const channelsForSession = query({
       .query('user_auth')
       .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
       .collect()
+    // TEMP-MIGRATION: skip rows not yet converted to (platform, user_slug).
     return rows
-      .map((r) => ({
-        stream_channel: streamChannelFor(r.platform, r.user_slug),
-        platform: r.platform,
-        user_slug: r.user_slug,
-        via_channel: r.via_channel,
-        updated_at: r.updated_at,
-      }))
+      .flatMap((r) =>
+        r.platform && r.user_slug
+          ? [
+              {
+                stream_channel: streamChannelFor(r.platform, r.user_slug),
+                platform: r.platform,
+                user_slug: r.user_slug,
+                via_channel: r.via_channel,
+                updated_at: r.updated_at,
+              },
+            ]
+          : [],
+      )
       .sort(compareChannelPriority)
   },
 })

@@ -277,6 +277,8 @@ export const join = mutation({
       .withIndex('by_session', (q) => q.eq('session_id', args.viewer_session_id))
       .collect()
     for (const ident of identities) {
+      // TEMP-MIGRATION: skip rows not yet converted to (platform, user_slug).
+      if (!ident.platform || !ident.user_slug) continue
       const key = `${ident.platform}|${ident.user_slug}`
       if (covered.has(key)) continue
       covered.add(key)

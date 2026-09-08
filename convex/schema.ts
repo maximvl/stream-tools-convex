@@ -24,27 +24,35 @@ export default defineSchema({
     .index('by_channel', ['stream_channel'])
     .index('by_channel_lower', ['channel_lower']),
 
+  // TEMP-MIGRATION: legacy `stream_channel`/`channel_lower` fields and optional
+  // `user_slug`/`platform` allow pre-migration rows to coexist until the
+  // one-time backfill completes. Tighten (remove legacy, re-require new)
+  // once prod data is converted. See convex/migrateTemp.ts.
   user_auth: defineTable({
-    user_slug: v.string(),
-    platform,
+    user_slug: v.optional(v.string()),
+    platform: v.optional(platform),
     session_id: v.string(),
     updated_at: v.number(),
     // Set when the identity was registered through another stream channel
     // (e.g. an RPS viewer who proved their code in the owner's chat).
     // Undefined for direct self-auth.
     via_channel: v.optional(v.string()),
+    stream_channel: v.optional(v.string()),
+    channel_lower: v.optional(v.string()),
   })
     .index('by_user', ['platform', 'user_slug'])
     .index('by_session', ['session_id']),
 
+  // TEMP-MIGRATION: same loosening as user_auth above.
   auth_keys: defineTable({
     cache_key: v.string(),
-    user_slug: v.string(),
-    platform,
+    user_slug: v.optional(v.string()),
+    platform: v.optional(platform),
     session_id: v.string(),
     auth_key: v.string(),
     created_at: v.number(),
     expires_at: v.number(),
+    stream_channel: v.optional(v.string()),
   }).index('by_cache_key', ['cache_key']),
 
   frontend_logs: defineTable({

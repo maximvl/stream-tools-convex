@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as frontendLogs from "../frontendLogs.js";
 import type * as lotoWinners from "../lotoWinners.js";
 import type * as maintenance from "../maintenance.js";
+import type * as migrateTemp from "../migrateTemp.js";
 import type * as migration from "../migration.js";
 import type * as rps from "../rps.js";
 import type * as rpsAuth from "../rpsAuth.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   frontendLogs: typeof frontendLogs;
   lotoWinners: typeof lotoWinners;
   maintenance: typeof maintenance;
+  migrateTemp: typeof migrateTemp;
   migration: typeof migration;
   rps: typeof rps;
   rpsAuth: typeof rpsAuth;
