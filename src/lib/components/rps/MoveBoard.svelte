@@ -18,10 +18,12 @@
     entry,
     matches,
     sessionId,
+    tournamentRunning,
   }: {
     entry: MyEntryView
     matches: BoardMatchView[]
     sessionId: string
+    tournamentRunning: boolean
   } = $props()
 
   const convex = useConvexClient()
@@ -172,6 +174,10 @@
       {#if submitError}
         <p class="mt-2 text-center text-sm text-red-500">{submitError}</p>
       {/if}
+    </div>
+  {:else if entry.status === 'active' && tournamentRunning}
+    <div class="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-center">
+      <p class="text-sm text-muted-foreground">Бой выигран! Ждём, пока доиграют другие пары…</p>
     </div>
   {/if}
 

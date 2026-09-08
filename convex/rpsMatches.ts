@@ -5,7 +5,7 @@ import { internal } from './_generated/api'
 import { moveValidator, randomMove, rpsOutcome, shuffle, type Move } from './rpsLib'
 import { parseIdentity } from './userIdentity'
 
-const ADVANCE_DELAY_MS = 3000
+const ADVANCE_DELAY_MS = 1200
 
 // Swiss-style pairing within equal-wins groups, high wins first; leftovers
 // pair down into the next group; the final odd player faces a bot

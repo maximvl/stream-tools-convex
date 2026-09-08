@@ -331,7 +331,12 @@
       {/if}
       {#each grouped as g (g.entry.id as string)}
         {#if sessionId}
-          <MoveBoard entry={g.entry} matches={g.matches} {sessionId} />
+          <MoveBoard
+            entry={g.entry}
+            matches={g.matches}
+            {sessionId}
+            tournamentRunning={tournament.status === 'running'}
+          />
         {/if}
       {/each}
       {#if tournament.status === 'registration'}
