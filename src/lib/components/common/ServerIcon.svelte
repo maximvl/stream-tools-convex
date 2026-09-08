@@ -27,7 +27,12 @@
   <Tooltip delayDuration={0}>
     <TooltipTrigger>
       <img
-        class={cn('h-4 w-4', className, inactive && 'opacity-30 grayscale', loading && 'strong-pulse')}
+        class={cn(
+          'h-4 w-4',
+          className,
+          inactive && 'opacity-30 grayscale',
+          loading && 'strong-pulse',
+        )}
         src={ServerIcons[server]}
         alt="{server} icon"
       />
@@ -38,10 +43,10 @@
   </Tooltip>
 {/if}
 
-
 <style>
   @keyframes strong-pulse {
-    0%, 100% {
+    0%,
+    100% {
       filter: grayscale(1);
       transform: scale(1);
     }

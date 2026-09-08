@@ -41,7 +41,7 @@
 
 <Dialog.Root bind:open>
   <Dialog.Trigger>
-    <div class="bg-card2 rounded-lg w-full">
+    <div class="bg-card2 w-full rounded-lg">
       <Button variant="outline" class="flex h-auto w-full flex-col px-3 py-1.5">
         <div class="font-medium">Подключение чатов</div>
         <div class="mt-1 flex gap-1.5">

@@ -32,16 +32,16 @@ export class TimerStore {
   remainingMs = $derived(Math.max(0, this.limitMs - this.passedMs))
   remainingSeconds = $derived(Math.floor(this.remainingMs / 1000))
   remainingSecondsPart = $derived(this.remainingSeconds % 60)
-  
+
   remainingMinutes = $derived(Math.floor(this.remainingSeconds / 60))
   remainingMinutesPart = $derived(this.remainingMinutes % 60)
-  
+
   remainingHours = $derived(Math.floor(this.remainingMinutes / 60))
   remainingHoursPart = $derived(this.remainingHours % 24)
-  
+
   remainingDays = $derived(Math.floor(this.remainingHours / 24))
   remainingDaysPart = $derived(this.remainingDays % 7)
-  
+
   remainingWeeks = $derived(Math.floor(this.remainingDays / 7))
   remainingWeeksPart = $derived(this.remainingWeeks % 7)
 
@@ -100,7 +100,7 @@ export class TimerStore {
       const pauseDuration = Temporal.Now.instant().since(this._pauseStartTime).total('millisecond')
       this._accumulatedPauseMs += pauseDuration
       this._pauseStartTime = undefined
-      
+
       this.state = 'active'
       this._interval = setInterval(() => {
         this.tick()

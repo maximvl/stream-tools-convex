@@ -1,5 +1,12 @@
 import { LocalStore } from './localStore.svelte'
-import type { ChatConnection, ChatServer, UserId, ChatUserWithSource, ChatMessageWithSource, ConnectionStatus } from '../types'
+import type {
+  ChatConnection,
+  ChatServer,
+  UserId,
+  ChatUserWithSource,
+  ChatMessageWithSource,
+  ConnectionStatus,
+} from '../types'
 import type { ChatMessagesResponse } from '../api'
 import { SvelteMap, SvelteSet } from 'svelte/reactivity'
 
@@ -119,7 +126,10 @@ export class ChatMessagesStore {
         source: { server, channel },
       }
       if (this.lastMessageReceivedPerConnection[connKey]) {
-        if (lastMsg && lastMsg.timestampMs > this.lastMessageReceivedPerConnection[connKey].timestampMs) {
+        if (
+          lastMsg &&
+          lastMsg.timestampMs > this.lastMessageReceivedPerConnection[connKey].timestampMs
+        ) {
           this.lastMessageReceivedPerConnection[connKey] = lastMsgWithSource
         }
       } else if (lastMsg) {

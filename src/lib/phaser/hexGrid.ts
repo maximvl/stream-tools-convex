@@ -32,13 +32,21 @@ export function hexCorners(cx: number, cy: number, size: number): { x: number; y
 }
 
 /** Top face corners squished for 2.5D side view */
-export function hexCornersTop2_5D(cx: number, cy: number, size: number): { x: number; y: number }[] {
+export function hexCornersTop2_5D(
+  cx: number,
+  cy: number,
+  size: number,
+): { x: number; y: number }[] {
   const base = hexCorners(cx, cy, size)
   return base.map((p) => ({ x: p.x, y: cy + (p.y - cy) * PERSPECTIVE_Y_SCALE }))
 }
 
 /** Bottom edge quads for extruded side walls (south-facing). Returns two quads: edge 1-2 and 2-3 */
-export function hexSideWalls(cx: number, cy: number, size: number): { quad: { x: number; y: number }[] }[] {
+export function hexSideWalls(
+  cx: number,
+  cy: number,
+  size: number,
+): { quad: { x: number; y: number }[] }[] {
   const top = hexCornersTop2_5D(cx, cy, size)
   const thickness = size * EXTRUSION_FACTOR
   // corners order 0..5: 0 (-30°), 1(30°), 2(90°), 3(150°), 4(210°), 5(270°/ -90°)
@@ -115,7 +123,7 @@ export function computeGridLayout(
   availW: number,
   availH: number,
   count: number,
-  opts?: { minSize?: number; maxSize?: number; padding?: number }
+  opts?: { minSize?: number; maxSize?: number; padding?: number },
 ): GridLayout {
   const minSize = opts?.minSize ?? MIN_HEX_SIZE
   const maxSize = opts?.maxSize ?? MAX_HEX_SIZE
@@ -207,7 +215,13 @@ export function cellPixel(layout: GridLayout, cell: Axial): { x: number; y: numb
 }
 
 /** Legacy axial helper kept for reference; not used for offset layout */
-export function offsetToPixel(col: number, row: number, size: number, originX: number, originY: number) {
+export function offsetToPixel(
+  col: number,
+  row: number,
+  size: number,
+  originX: number,
+  originY: number,
+) {
   return {
     x: originX + col * SQRT3 * size + (row % 2) * (SQRT3 * size * 0.5),
     y: originY + row * 1.5 * size,

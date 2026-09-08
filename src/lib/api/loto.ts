@@ -48,9 +48,7 @@ type FetchLotoWinnersResponse = {
   winners: LotoWinner[]
 }
 
-export async function fetchLotoWinners(
-  params: AuthCheckParams,
-): Promise<FetchLotoWinnersResponse> {
+export async function fetchLotoWinners(params: AuthCheckParams): Promise<FetchLotoWinnersResponse> {
   const res = await convexFetchLotoWinners(params)
   return { winners: res.winners as LotoWinner[] }
 }

@@ -9,44 +9,44 @@
   const revealAll = $derived(lotoStore.superGameState === 'finished')
 </script>
 
-<div class="bg-slate-800 p-4 rounded-xl">
-{#if lotoStore.superGameState === 'not_started'}
-  <Animation4 />
-{:else}
-  <div class="grid grid-cols-10 justify-center gap-2 text-center">
-    {#each lotoStore.superGameValues as value, idx (idx)}
-      {@const active = lotoStore.superGameGuesses.includes(idx + 1)}
-      {#snippet hidden()}
-        <div
-          class={cn(
-            'cell flex h-12 w-12 items-center justify-center', 
-            active ? 'cell-highlight' : ''
-          )}
-        >
-          <span class="cell-text">{(idx + 1).toString().padStart(2, '0')}</span>
-        </div>
-      {/snippet}
-      {#snippet revealed()}
-        <RewardItem
-          class={cn('cell h-12 w-12 p-1', active ? 'cell-highlight' : '')}
-          reward={value}
-          vkRoles={lotoStore.allVkRoles}
-          emptyPlaceholder={active ? '' : (idx + 1).toString().padStart(2, '0')}
+<div class="rounded-xl bg-slate-800 p-4">
+  {#if lotoStore.superGameState === 'not_started'}
+    <Animation4 />
+  {:else}
+    <div class="grid grid-cols-10 justify-center gap-2 text-center">
+      {#each lotoStore.superGameValues as value, idx (idx)}
+        {@const active = lotoStore.superGameGuesses.includes(idx + 1)}
+        {#snippet hidden()}
+          <div
+            class={cn(
+              'cell flex h-12 w-12 items-center justify-center',
+              active ? 'cell-highlight' : '',
+            )}
+          >
+            <span class="cell-text">{(idx + 1).toString().padStart(2, '0')}</span>
+          </div>
+        {/snippet}
+        {#snippet revealed()}
+          <RewardItem
+            class={cn('cell h-12 w-12 p-1', active ? 'cell-highlight' : '')}
+            reward={value}
+            vkRoles={lotoStore.allVkRoles}
+            emptyPlaceholder={active ? '' : (idx + 1).toString().padStart(2, '0')}
+          />
+        {/snippet}
+        <Flipper
+          oneShot
+          disabled={!active}
+          class="h-12 w-12"
+          hidden={revealAll ? revealed : hidden}
+          {revealed}
+          onFlip={() => {
+            lotoStore.superGameRevealedIds.push(idx)
+          }}
         />
-      {/snippet}
-      <Flipper
-        oneShot
-        disabled={!active}
-        class="h-12 w-12"
-        hidden={revealAll ? revealed : hidden}
-        {revealed}
-        onFlip={() => {
-          lotoStore.superGameRevealedIds.push(idx)
-        }}
-      />
-    {/each}
-  </div>
-{/if}
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>

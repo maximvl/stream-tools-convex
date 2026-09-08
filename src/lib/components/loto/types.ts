@@ -16,8 +16,7 @@ export type LotoTicket = {
 }
 
 export type SuperGameReward =
-  | { kind: 'empty' | 'x1' | 'x2' | 'x3' | 'bomb' }
-  | { kind: 'vk-role'; roleId: VkRoleId }
+  { kind: 'empty' | 'x1' | 'x2' | 'x3' | 'bomb' } | { kind: 'vk-role'; roleId: VkRoleId }
 
 export type VkRewards = {
   [streamKey: string]: { [id: VkRoleId]: number }

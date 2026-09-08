@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Input } from '$lib/components/ui/input'
   import { Button } from '$lib/components/ui/button'
-    import { Trash2 } from '@lucide/svelte'
+  import { Trash2 } from '@lucide/svelte'
 
   type Props = {
     index: number
@@ -27,12 +27,7 @@
     oninput={(e) => onUpdate(e.currentTarget.value)}
   />
   {#if showDelete}
-    <Button
-      variant="destructive"
-      size="icon"
-      onclick={onDelete}
-      class="shrink-0"
-    >
+    <Button variant="destructive" size="icon" onclick={onDelete} class="shrink-0">
       <Trash2 />
     </Button>
   {/if}

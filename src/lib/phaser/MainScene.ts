@@ -16,7 +16,8 @@ import { ServerIcons } from '$lib/constants'
 import { KICK_MOD_DATA_URL } from '$lib/constants/kickModIcon'
 
 const PROXY = 'https://ext.rte.net.ru:8443'
-const proxied = (url: string) => (url.startsWith('data:') || url.startsWith(PROXY) ? url : `${PROXY}/${url}`)
+const proxied = (url: string) =>
+  url.startsWith('data:') || url.startsWith(PROXY) ? url : `${PROXY}/${url}`
 
 // Keep legacy export for Svelte props compatibility; hex game doesn't use lives/score anymore
 export type GameStats = { score: number; lives: number; level: number }
@@ -85,7 +86,10 @@ const PLATFORM_HEX_BASE: Record<ChatServer, { r: number; g: number; b: number }>
 }
 const DEFAULT_HEX_BASE = { r: 30, g: 58, b: 34 } // muted battlefield green for no-platform
 
-function platformTopColor(platform: ChatServer | undefined, depthShade: number): { fill: number; stroke: number } {
+function platformTopColor(
+  platform: ChatServer | undefined,
+  depthShade: number,
+): { fill: number; stroke: number } {
   const base = (platform && PLATFORM_HEX_BASE[platform]) ?? DEFAULT_HEX_BASE
   const r = Math.round(base.r * (0.55 + depthShade * 0.45))
   const g = Math.round(base.g * (0.55 + depthShade * 0.45))
@@ -99,7 +103,11 @@ function platformTopColor(platform: ChatServer | undefined, depthShade: number):
   return { fill, stroke }
 }
 
-function platformWallColor(platform: ChatServer | undefined, depthShade: number, side: boolean): number {
+function platformWallColor(
+  platform: ChatServer | undefined,
+  depthShade: number,
+  side: boolean,
+): number {
   const base = (platform && PLATFORM_HEX_BASE[platform]) ?? DEFAULT_HEX_BASE
   const factor = side ? 0.32 : 0.22
   const r = Math.round(base.r * factor * depthShade)
@@ -304,7 +312,7 @@ export class MainScene extends Phaser.Scene {
         const isPeak = i % 2 === 0
         const h = isPeak ? Phaser.Math.Between(28, 52) : Phaser.Math.Between(14, 32)
         const jitter = Phaser.Math.Between(-6, 6)
-        const py = horizonY + 6 - h + (jitter * 0.15)
+        const py = horizonY + 6 - h + jitter * 0.15
         g.lineTo(px, py)
       }
     }
@@ -328,7 +336,7 @@ export class MainScene extends Phaser.Scene {
         const py = horizonY + 6 - baseH
         nearPoints.push({ x: px, y: py })
         if (phase === 0 && i > 0 && i < peaks) {
-          const midX = px + width / peaks * 0.35
+          const midX = px + (width / peaks) * 0.35
           const midY = py + Phaser.Math.Between(10, 18)
           nearPoints.push({ x: midX, y: midY })
         }
@@ -467,7 +475,14 @@ export class MainScene extends Phaser.Scene {
       if (idx === undefined || !this.layout) continue
       const pos = cellPixel(this.layout, this.layout.cells[idx])
       const ring = this.add.circle(pos.x, pos.y, 8, 0x22c55e, 0.85).setDepth(pos.y + 30)
-      this.tweens.add({ targets: ring, scale: 4.5, alpha: 0, duration: 480, ease: 'Quad.Out', onComplete: () => ring.destroy() })
+      this.tweens.add({
+        targets: ring,
+        scale: 4.5,
+        alpha: 0,
+        duration: 480,
+        ease: 'Quad.Out',
+        onComplete: () => ring.destroy(),
+      })
       this.cameras.main.flash(120, 80, 255, 120)
     }
     return revived.length
@@ -476,7 +491,9 @@ export class MainScene extends Phaser.Scene {
   /** Shield same amount of alive unshielded players — shield saves from 1 hit */
   public shield(): number {
     if (this.isFiring || this.isGameOver) return 0
-    const unshieldedAlive = this.players.filter((p) => this.aliveIds.has(p.id) && !this.shieldedIds.has(p.id))
+    const unshieldedAlive = this.players.filter(
+      (p) => this.aliveIds.has(p.id) && !this.shieldedIds.has(p.id),
+    )
     if (unshieldedAlive.length === 0) return 0
     const toShield = Math.min(this.computeEliminationCount(), unshieldedAlive.length)
     if (toShield <= 0) return 0
@@ -493,7 +510,14 @@ export class MainScene extends Phaser.Scene {
       if (idx === undefined || !this.layout) continue
       const pos = cellPixel(this.layout, this.layout.cells[idx])
       const ring = this.add.circle(pos.x, pos.y, 10, 0x60a5fa, 0.8).setDepth(pos.y + 30)
-      this.tweens.add({ targets: ring, scale: 3.8, alpha: 0, duration: 520, ease: 'Quad.Out', onComplete: () => ring.destroy() })
+      this.tweens.add({
+        targets: ring,
+        scale: 3.8,
+        alpha: 0,
+        duration: 520,
+        ease: 'Quad.Out',
+        onComplete: () => ring.destroy(),
+      })
     }
     return shielded.length
   }
@@ -533,7 +557,8 @@ export class MainScene extends Phaser.Scene {
       const isDead = this.eliminatedCellKeys.has(key)
       // find player occupying this hex (players[i] -> cells[i])
       const cellIdx = this.layout.cells.findIndex((c) => c.q === cell.q && c.r === cell.r)
-      const occupant = cellIdx >= 0 && cellIdx < this.players.length ? this.players[cellIdx] : undefined
+      const occupant =
+        cellIdx >= 0 && cellIdx < this.players.length ? this.players[cellIdx] : undefined
       const platform = occupant?.platform
       const top = hexCornersTop2_5D(x, y, s)
       const walls = hexSideWalls(x, y, s)
@@ -551,7 +576,7 @@ export class MainScene extends Phaser.Scene {
           ? Phaser.Display.Color.GetColor(10, 10, 12)
           : platformWallColor(platform, depthShade, false)
         g.fillStyle(col, 1)
-        g.lineStyle(1, isDead ? 0x1a2a3a : (platform ? 0x222222 : 0x1a2a3a), isDead ? 0.35 : 0.9)
+        g.lineStyle(1, isDead ? 0x1a2a3a : platform ? 0x222222 : 0x1a2a3a, isDead ? 0.35 : 0.9)
         g.beginPath()
         g.moveTo(q[0].x, q[0].y)
         g.lineTo(q[1].x, q[1].y)
@@ -637,7 +662,14 @@ export class MainScene extends Phaser.Scene {
     const nextById = new Map<string, Phaser.GameObjects.Container>()
     const seenIds = new Set<string>()
 
-    const createToken = (p: HexPlayer, x: number, y: number, isAlive: boolean, isShielded: boolean, withPopIn: boolean): Phaser.GameObjects.Container => {
+    const createToken = (
+      p: HexPlayer,
+      x: number,
+      y: number,
+      isAlive: boolean,
+      isShielded: boolean,
+      withPopIn: boolean,
+    ): Phaser.GameObjects.Container => {
       const depth = y + (this.playerIndexById.get(p.id) ?? 0) * 0.01
       const container = this.add.container(x, y).setDepth(depth)
       container.setData('isAlive', isAlive)
@@ -939,11 +971,21 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  public getCurrentTurn(): number { return this.currentTurn }
-  public getTotalTurns(): number { return this.TOTAL_TURNS }
-  public isEliminating(): boolean { return this.isFiring }
-  public getAliveCount(): number { return this.aliveIds.size }
-  public getGameStarted(): boolean { return this.gameStarted }
+  public getCurrentTurn(): number {
+    return this.currentTurn
+  }
+  public getTotalTurns(): number {
+    return this.TOTAL_TURNS
+  }
+  public isEliminating(): boolean {
+    return this.isFiring
+  }
+  public getAliveCount(): number {
+    return this.aliveIds.size
+  }
+  public getGameStarted(): boolean {
+    return this.gameStarted
+  }
 
   /** Called by floating Fire button — 7-turn elimination with fire from sky */
   public fire() {
@@ -984,7 +1026,12 @@ export class MainScene extends Phaser.Scene {
     const victims = alive.slice(0, toElim)
     this.isFiring = true
     this.currentTurn += 1
-    this.events.emit('turn', { turn: this.currentTurn, total: this.TOTAL_TURNS, eliminated: victims.length, alive: this.aliveIds.size - victims.length })
+    this.events.emit('turn', {
+      turn: this.currentTurn,
+      total: this.TOTAL_TURNS,
+      eliminated: victims.length,
+      alive: this.aliveIds.size - victims.length,
+    })
     this.animateFireElimination(victims)
     this.events.emit('fire')
   }
@@ -1020,9 +1067,23 @@ export class MainScene extends Phaser.Scene {
         this.cameras.main.shake(90, 0.004)
         this.cameras.main.flash(90, 100, 160, 255)
         const sRing = this.add.circle(pos.x, pos.y - 6, 12, 0x60a5fa, 0.85).setDepth(pos.y + 30)
-        this.tweens.add({ targets: sRing, scale: 3.2, alpha: 0, duration: 380, ease: 'Quad.Out', onComplete: () => sRing.destroy() })
+        this.tweens.add({
+          targets: sRing,
+          scale: 3.2,
+          alpha: 0,
+          duration: 380,
+          ease: 'Quad.Out',
+          onComplete: () => sRing.destroy(),
+        })
         const sRing2 = this.add.circle(pos.x, pos.y - 6, 8, 0x93c5fd, 0.9).setDepth(pos.y + 31)
-        this.tweens.add({ targets: sRing2, scale: 4.0, alpha: 0, duration: 320, ease: 'Quad.Out', onComplete: () => sRing2.destroy() })
+        this.tweens.add({
+          targets: sRing2,
+          scale: 4.0,
+          alpha: 0,
+          duration: 320,
+          ease: 'Quad.Out',
+          onComplete: () => sRing2.destroy(),
+        })
         for (let i = 0; i < 6; i++) {
           const p = this.add.circle(pos.x, pos.y - 10, 2.5, 0xbfdbfe, 1).setDepth(pos.y + 32)
           const ang = (i / 6) * Math.PI * 2
@@ -1047,7 +1108,13 @@ export class MainScene extends Phaser.Scene {
           }
           container.setData('isShielded', false)
           // bump animation — survived
-          this.tweens.add({ targets: container, scale: 1.1, duration: 100, yoyo: true, ease: 'Quad.Out' })
+          this.tweens.add({
+            targets: container,
+            scale: 1.1,
+            duration: 100,
+            yoyo: true,
+            ease: 'Quad.Out',
+          })
         }
         this.events.emit('shieldBreak', { playerId: victim.id })
         this.emitStats()
@@ -1079,12 +1146,34 @@ export class MainScene extends Phaser.Scene {
       this.cameras.main.shake(180, 0.008)
       // ring shockwave
       const ring = this.add.circle(pos.x, pos.y, 8, 0xff4500, 0.9).setDepth(pos.y + 30)
-      this.tweens.add({ targets: ring, scale: 4.5, alpha: 0, duration: 420, ease: 'Quad.Out', onComplete: () => ring.destroy() })
+      this.tweens.add({
+        targets: ring,
+        scale: 4.5,
+        alpha: 0,
+        duration: 420,
+        ease: 'Quad.Out',
+        onComplete: () => ring.destroy(),
+      })
       const ring2 = this.add.circle(pos.x, pos.y, 6, 0xffa500, 0.7).setDepth(pos.y + 31)
-      this.tweens.add({ targets: ring2, scale: 3.2, alpha: 0, duration: 360, ease: 'Quad.Out', onComplete: () => ring2.destroy() })
+      this.tweens.add({
+        targets: ring2,
+        scale: 3.2,
+        alpha: 0,
+        duration: 360,
+        ease: 'Quad.Out',
+        onComplete: () => ring2.destroy(),
+      })
       // particles burst
       for (let i = 0; i < 10; i++) {
-        const p = this.add.circle(pos.x, pos.y - 6, Phaser.Math.Between(2, 4), Phaser.Display.Color.GetColor(255, Phaser.Math.Between(90, 200), 0), 1).setDepth(pos.y + 32)
+        const p = this.add
+          .circle(
+            pos.x,
+            pos.y - 6,
+            Phaser.Math.Between(2, 4),
+            Phaser.Display.Color.GetColor(255, Phaser.Math.Between(90, 200), 0),
+            1,
+          )
+          .setDepth(pos.y + 32)
         const ang = (i / 10) * Math.PI * 2 + Math.random() * 0.4
         const dist = Phaser.Math.Between(16, 42)
         this.tweens.add({
@@ -1100,8 +1189,17 @@ export class MainScene extends Phaser.Scene {
       }
       // falling debris / smoke puffs
       for (let i = 0; i < 3; i++) {
-        const puff = this.add.circle(pos.x + Phaser.Math.Between(-8, 8), pos.y - 10, 6, 0x333333, 0.38).setDepth(pos.y + 33)
-        this.tweens.add({ targets: puff, y: puff.y - Phaser.Math.Between(12, 22), alpha: 0, scale: 2.2, duration: 520 + i * 100, onComplete: () => puff.destroy() })
+        const puff = this.add
+          .circle(pos.x + Phaser.Math.Between(-8, 8), pos.y - 10, 6, 0x333333, 0.38)
+          .setDepth(pos.y + 33)
+        this.tweens.add({
+          targets: puff,
+          y: puff.y - Phaser.Math.Between(12, 22),
+          alpha: 0,
+          scale: 2.2,
+          duration: 520 + i * 100,
+          onComplete: () => puff.destroy(),
+        })
       }
       // eliminated: keep name grayed, remove icon entirely
       if (container) {
@@ -1125,7 +1223,10 @@ export class MainScene extends Phaser.Scene {
                 obj.destroy()
               } else if (obj instanceof Phaser.GameObjects.Text) {
                 const txt = obj as Phaser.GameObjects.Text
-                if (txt.text.length === 1 && txt.text.toUpperCase() === victim.name.charAt(0).toUpperCase()) {
+                if (
+                  txt.text.length === 1 &&
+                  txt.text.toUpperCase() === victim.name.charAt(0).toUpperCase()
+                ) {
                   // initial letter — remove
                   txt.setVisible(false)
                   txt.destroy()
@@ -1137,7 +1238,10 @@ export class MainScene extends Phaser.Scene {
                   txt.setAlpha(0.82)
                   // ensure bg is centered too — find bg graphics
                   for (const maybeBg of container.list) {
-                    if (maybeBg instanceof Phaser.GameObjects.Graphics && maybeBg.getData('isNameBg')) {
+                    if (
+                      maybeBg instanceof Phaser.GameObjects.Graphics &&
+                      maybeBg.getData('isNameBg')
+                    ) {
                       const bgW = txt.width + 8
                       const bgH = txt.height + 2
                       maybeBg.clear()
@@ -1243,7 +1347,13 @@ export class MainScene extends Phaser.Scene {
         },
       })
       // slight wobble / rotation for realism
-      this.tweens.add({ targets: fireContainer, angle: Phaser.Math.Between(-12, 12), duration: duration * 0.9, delay, ease: 'Sine.InOut' })
+      this.tweens.add({
+        targets: fireContainer,
+        angle: Phaser.Math.Between(-12, 12),
+        duration: duration * 0.9,
+        delay,
+        ease: 'Sine.InOut',
+      })
     })
   }
 

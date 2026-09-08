@@ -221,7 +221,12 @@
                 {@const [server, channel] = winner.stream_channel.split('/')}
                 <div class="flex items-center gap-2">
                   <div>{formatTime(winner.created_at)}</div>
-                  <ServerIcon server={server as ChatServer} {channel} class="h-4 w-4" status='connected' />
+                  <ServerIcon
+                    server={server as ChatServer}
+                    {channel}
+                    class="h-4 w-4"
+                    status="connected"
+                  />
                 </div>
               {/each}
             </div>
@@ -232,7 +237,7 @@
         server={ticket.source.server}
         channel={ticket.source.channel}
         class="h-6 w-6 shrink-0 transition-opacity hover:opacity-100"
-        status='connected'
+        status="connected"
       />
     </div>
   </div>

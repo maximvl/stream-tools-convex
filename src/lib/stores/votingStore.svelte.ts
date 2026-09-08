@@ -36,7 +36,11 @@ export class VotingStore {
     this.timer.limitMs = this.durationStore.value * 1000
 
     $effect(() => {
-      if (this.timer.limitMs > 0 && this.timer.state === 'finished' && this.votingState === 'voting') {
+      if (
+        this.timer.limitMs > 0 &&
+        this.timer.state === 'finished' &&
+        this.votingState === 'voting'
+      ) {
         untrack(() => {
           this.endVoting()
         })
@@ -172,10 +176,22 @@ export class VotingStore {
     })
 
     // Only show servers that have votes
-    if (hasTwitchVotes) counts.forEach((c) => { if (c.twitch === undefined) c.twitch = 0 })
-    if (hasVkvideoVotes) counts.forEach((c) => { if (c.vkvideo === undefined) c.vkvideo = 0 })
-    if (hasKickVotes) counts.forEach((c) => { if (c.kick === undefined) c.kick = 0 })
-    if (hasWtvVotes) counts.forEach((c) => { if (c.wtv === undefined) c.wtv = 0 })
+    if (hasTwitchVotes)
+      counts.forEach((c) => {
+        if (c.twitch === undefined) c.twitch = 0
+      })
+    if (hasVkvideoVotes)
+      counts.forEach((c) => {
+        if (c.vkvideo === undefined) c.vkvideo = 0
+      })
+    if (hasKickVotes)
+      counts.forEach((c) => {
+        if (c.kick === undefined) c.kick = 0
+      })
+    if (hasWtvVotes)
+      counts.forEach((c) => {
+        if (c.wtv === undefined) c.wtv = 0
+      })
 
     return counts
   })

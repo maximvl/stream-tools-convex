@@ -37,9 +37,11 @@
       </div>
     {:else}
       <div class="flex flex-col gap-4">
-        <div class="flex gap-2 text-center text-4xl font-black tracking-wide text-white items-center justify-center">
+        <div
+          class="flex items-center justify-center gap-2 text-center text-4xl font-black tracking-wide text-white"
+        >
           <div>Супер-игра с</div>
-          <div class="flex gap-1 items-center">
+          <div class="flex items-center gap-1">
             <PlayerName {user} name={lotoStore.winner.owner_name} />
             {#if user}
               <UserBadges {user} />

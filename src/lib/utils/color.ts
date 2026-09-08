@@ -18,7 +18,6 @@ export function isBrightColor(hex: string): boolean {
   return brightness > 128
 }
 
-
 export function isBrightColorOld(hexColor: string): boolean {
   const [r, g, b] = hexToRgb(hexColor)
 
