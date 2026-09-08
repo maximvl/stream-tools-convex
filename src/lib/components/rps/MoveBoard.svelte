@@ -1,8 +1,8 @@
 <script lang="ts">
   import { useConvexClient } from 'convex-svelte'
-  import { Button } from '$lib/components/ui/button'
+  import { cn } from '$lib/utils'
   import {
-    MOVE_GLYPH,
+    MOVE_IMAGE,
     submitRpsMove,
     type BoardMatchView,
     type MatchId,
@@ -11,6 +11,8 @@
     type RpsMove,
   } from '$lib/rps'
   import Countdown from './Countdown.svelte'
+  import MatchCard from './MatchCard.svelte'
+  import PlayerCard from './PlayerCard.svelte'
 
   let {
     entry,
@@ -89,34 +91,86 @@
 
   {#if current && entry.status === 'active'}
     {@const opp = current.opp}
-    <div class="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-center">
-      <p class="text-sm text-muted-foreground">Текущий соперник</p>
-      <p class="text-2xl font-black">{opp?.is_bot ? 'BOT 🤖' : (opp?.display_name ?? '—')}</p>
-      {#if current.my_move}
-        <p class="mt-2 text-lg">
-          Твой ход: {MOVE_GLYPH[current.my_move]} · ждём соперника…
-        </p>
-      {:else if closed}
-        <p class="mt-2 font-bold text-red-500">Время вышло</p>
-      {:else}
-        <div class="mt-2 flex items-center justify-center gap-2">
-          <span class="text-sm text-muted-foreground">Ходи!</span>
-          <Countdown deadline_at={current.deadline_at} />
+    {@const picked = current.my_move ?? null}
+    <div class="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+      <div class="flex items-stretch justify-center gap-2 sm:gap-4">
+        <!-- My side: info left, move buttons right of it -->
+        <div class="flex flex-1 flex-col items-center justify-center gap-2">
+          {#if current.me}
+            <PlayerCard
+              name={current.me.display_name}
+              platform={current.me.platform}
+              userSlug={current.me.user_slug}
+              meta="Ты"
+            />
+          {/if}
         </div>
-        <div class="mt-3 flex justify-center gap-3">
+        <div class="flex flex-col justify-center gap-2">
           {#each moves as move (move)}
-            <Button
-              class="h-20 w-20 rounded-2xl text-4xl transition-all hover:scale-110 active:scale-95 disabled:opacity-40"
-              disabled={submitting}
+            {@const isPicked = picked === move}
+            {@const dimOthers = picked !== null && !isPicked}
+            <button
+              class={cn(
+                'rounded-2xl border-2 p-1.5 transition-all',
+                isPicked
+                  ? 'scale-105 border-green-500 bg-green-500/15 shadow-lg shadow-green-500/30'
+                  : 'border-transparent hover:scale-110 hover:border-primary/50 active:scale-95',
+                (dimOthers || submitting) && 'opacity-30 grayscale',
+              )}
+              disabled={picked !== null || submitting || closed}
               onclick={() => pick(move)}
+              title={move}
             >
-              {MOVE_GLYPH[move]}
-            </Button>
+              <img
+                src={MOVE_IMAGE[move]}
+                alt={move}
+                class="h-12 w-12 object-contain sm:h-14 sm:w-14"
+              />
+            </button>
           {/each}
         </div>
-      {/if}
+
+        <!-- Center: timer / state -->
+        <div class="flex w-20 shrink-0 flex-col items-center justify-center gap-1 text-center">
+          {#if picked}
+            <span class="text-xs text-muted-foreground">Ждём соперника…</span>
+          {:else if closed}
+            <span class="text-sm font-bold text-red-500">Время вышло</span>
+          {:else}
+            <span class="text-xs tracking-widest text-muted-foreground uppercase">Ходи</span>
+            <Countdown deadline_at={current.deadline_at} />
+          {/if}
+        </div>
+
+        <!-- Opponent side: mirrored — muted icons left of info; their pick is
+             revealed in history once the match resolves -->
+        <div class="flex flex-col justify-center gap-2">
+          {#each moves as move (move)}
+            <div
+              class="rounded-2xl border-2 border-transparent p-1.5 opacity-30 grayscale"
+              title={move}
+            >
+              <img
+                src={MOVE_IMAGE[move]}
+                alt={move}
+                class="h-12 w-12 object-contain sm:h-14 sm:w-14"
+              />
+            </div>
+          {/each}
+        </div>
+        <div class="flex flex-1 flex-col items-center justify-center gap-2">
+          {#if opp}
+            <PlayerCard
+              name={opp.is_bot ? 'BOT' : opp.display_name}
+              platform={opp.platform}
+              userSlug={opp.is_bot ? undefined : opp.user_slug}
+              meta={opp.is_bot ? 'бот' : `${opp.wins} побед`}
+            />
+          {/if}
+        </div>
+      </div>
       {#if submitError}
-        <p class="mt-2 text-sm text-red-500">{submitError}</p>
+        <p class="mt-2 text-center text-sm text-red-500">{submitError}</p>
       {/if}
     </div>
   {/if}
@@ -125,23 +179,23 @@
     <div class="flex flex-col gap-1.5">
       <p class="text-sm font-bold tracking-widest text-muted-foreground uppercase">История</p>
       {#each history as h (h.id as string)}
-        <div class="bg-card2 flex items-center justify-between rounded-xl px-3 py-2 text-sm">
-          <span class="text-muted-foreground">Раунд {h.round} · {h.opp?.display_name}</span>
-          <span>
-            {#if h.my_move}{MOVE_GLYPH[h.my_move]}{/if}
-            :
-            {#if h.opp_move}{MOVE_GLYPH[h.opp_move]}{/if}
-          </span>
-          <span
-            class="font-bold {h.is_draw
-              ? 'text-amber-300'
-              : h.i_won
-                ? 'text-green-400'
-                : 'text-red-400'}"
-          >
-            {h.is_draw ? 'Ничья' : h.i_won ? 'Победа' : 'Поражение'}
-          </span>
-        </div>
+        {@const winnerId = h.is_draw ? undefined : h.i_won ? h.me?.id : h.opp?.id}
+        {#if h.me && h.opp}
+          <MatchCard
+            match={{
+              id: h.id,
+              round: h.round,
+              status: 'resolved',
+              winner_id: winnerId,
+              is_draw: h.is_draw,
+              move_a: h.my_move,
+              move_b: h.opp_move,
+              deadline_at: h.deadline_at,
+              a: h.me,
+              b: h.opp,
+            }}
+          />
+        {/if}
       {/each}
     </div>
   {/if}

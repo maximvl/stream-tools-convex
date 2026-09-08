@@ -4,6 +4,7 @@
   import { untrack } from 'svelte'
   import { api } from '../../../../convex/_generated/api.js'
   import Nav from '$lib/components/layout/Nav.svelte'
+  import RpsChatProvider from '$lib/components/rps/RpsChatProvider.svelte'
   import StreamerDashboard from '$lib/components/rps/StreamerDashboard.svelte'
   import ViewerPanel from '$lib/components/rps/ViewerPanel.svelte'
   import { getSessionId } from '$lib/session'
@@ -49,12 +50,16 @@
       <a href="/rps" class="font-bold text-primary hover:underline">Все турниры</a>
     </div>
   {:else if isOwner}
-    <StreamerDashboard
-      {tournamentId}
-      tournament={data}
-      ownedChannels={(owned.data ?? []).map((c) => c.stream_channel)}
-    />
+    <RpsChatProvider channels={data.stream_channels}>
+      <StreamerDashboard
+        {tournamentId}
+        tournament={data}
+        ownedChannels={(owned.data ?? []).map((c) => c.stream_channel)}
+      />
+    </RpsChatProvider>
   {:else}
-    <ViewerPanel {tournamentId} tournament={data} />
+    <RpsChatProvider channels={data.stream_channels}>
+      <ViewerPanel {tournamentId} tournament={data} />
+    </RpsChatProvider>
   {/if}
 </div>

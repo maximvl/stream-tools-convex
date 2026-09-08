@@ -233,8 +233,7 @@
         <div
           class="mx-auto flex w-full max-w-xl flex-col items-center gap-2 rounded-3xl border bg-card p-6 text-center"
         >
-          <p class="text-lg font-bold">Вступаем в турнир…</p>
-          <p class="text-sm text-muted-foreground">Твоя личность уже подтверждена.</p>
+          <p class="text-lg font-bold">Зареган в турнирe</p>
         </div>
       {:else}
         <div class="mx-auto flex w-full max-w-xl flex-col gap-4 rounded-3xl border bg-card p-6">

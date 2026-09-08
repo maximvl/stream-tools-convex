@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { MOVE_GLYPH, type RoundMatchView } from '$lib/rps'
+  import { MOVE_IMAGE, type RoundMatchView } from '$lib/rps'
   import Countdown from './Countdown.svelte'
+  import PlayerCard from './PlayerCard.svelte'
 
   let { match }: { match: RoundMatchView } = $props()
 
@@ -13,6 +14,7 @@
           ? 'b'
           : null,
   )
+  const resolved = $derived(match.status === 'resolved')
 </script>
 
 <div class="flex items-center gap-3 rounded-2xl border bg-card p-4">
@@ -21,38 +23,54 @@
       ? 'bg-green-500/15 ring-1 ring-green-500/50'
       : ''}"
   >
-    <span class="font-bold">{match.a?.display_name ?? '—'}</span>
-    <span class="text-xs text-muted-foreground">
-      {match.a?.is_bot ? 'BOT' : match.a?.platform} · {match.a?.wins ?? 0} побед
-    </span>
-    {#if match.status === 'resolved' && match.move_a}
-      <span class="text-3xl">{MOVE_GLYPH[match.move_a]}</span>
+    {#if match.a}
+      <PlayerCard
+        name={match.a.display_name}
+        platform={match.a.platform}
+        userSlug={match.a.user_slug}
+        meta={`${match.a.wins} побед`}
+        dim={resolved && winnerSide !== null && winnerSide !== 'a'}
+      />
     {/if}
   </div>
 
-  <div class="flex w-20 flex-col items-center gap-1 text-center">
-    {#if match.status === 'pending'}
+  {#if resolved && match.move_a}
+    <img src={MOVE_IMAGE[match.move_a]} alt={match.move_a} class="h-12 w-12 object-contain" />
+  {/if}
+
+  {#if match.status === 'pending'}
+    <div class="flex w-20 flex-col items-center gap-1 text-center">
       <span class="text-xs tracking-widest text-muted-foreground uppercase">Бой</span>
       <Countdown deadline_at={match.deadline_at} />
-    {:else if match.is_draw}
+    </div>
+  {:else if match.is_draw}
+    <div class="flex w-20 flex-col items-center gap-1 text-center">
       <span class="text-sm font-bold text-amber-300">Ничья</span>
       <span class="text-xs text-muted-foreground">переигровка</span>
-    {:else}
-      <span class="text-sm font-bold text-green-400">Победитель</span>
-    {/if}
-  </div>
+    </div>
+  {/if}
+
+  {#if resolved && match.move_b}
+    <img
+      src={MOVE_IMAGE[match.move_b]}
+      alt={match.move_b}
+      class="h-12 w-12 scale-x-[-1] object-contain"
+    />
+  {/if}
 
   <div
     class="flex flex-1 flex-col items-center gap-1 rounded-xl p-2 {winnerSide === 'b'
       ? 'bg-green-500/15 ring-1 ring-green-500/50'
       : ''}"
   >
-    <span class="font-bold">{match.b?.display_name ?? '—'}</span>
-    <span class="text-xs text-muted-foreground">
-      {match.b?.is_bot ? 'BOT' : match.b?.platform} · {match.b?.wins ?? 0} побед
-    </span>
-    {#if match.status === 'resolved' && match.move_b}
-      <span class="text-3xl">{MOVE_GLYPH[match.move_b]}</span>
+    {#if match.b}
+      <PlayerCard
+        name={match.b.display_name}
+        platform={match.b.platform}
+        userSlug={match.b.user_slug}
+        meta={`${match.b.wins} побед`}
+        dim={resolved && winnerSide !== null && winnerSide !== 'b'}
+      />
     {/if}
   </div>
 </div>

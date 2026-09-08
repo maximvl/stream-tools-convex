@@ -122,10 +122,12 @@ export async function submitRpsMove(
   return await client.mutation(api.rpsMatches.submitMove, args)
 }
 
-export const MOVE_GLYPH: Record<RpsMove, string> = {
-  rock: '🪨',
-  paper: '📄',
-  scissors: '✂️',
+const RPS_IMG_BASE = 'https://mapcar.alwaysdata.net/static/img'
+
+export const MOVE_IMAGE: Record<RpsMove, string> = {
+  rock: `${RPS_IMG_BASE}/rock.png`,
+  paper: `${RPS_IMG_BASE}/paper.png`,
+  scissors: `${RPS_IMG_BASE}/scissor.png`,
 }
 
 export type RpsPlatform = 'vkvideo' | 'twitch' | 'kick' | 'wtv'

@@ -3,7 +3,7 @@
   import { useConvexClient, useQuery } from 'convex-svelte'
   import { api } from '../../../../convex/_generated/api.js'
   import { Button } from '$lib/components/ui/button'
-  import ServerIcon from '$lib/components/common/ServerIcon.svelte'
+  import PlayerCard from './PlayerCard.svelte'
   import {
     createTournament,
     startTournament,
@@ -163,10 +163,13 @@
       {:else}
         <div class="flex flex-wrap justify-center gap-3">
           {#each players as p (p.id as string)}
-            <div class="flex items-center gap-2 rounded-xl border bg-card px-4 py-2">
-              <ServerIcon server={p.platform} status="connected" class="h-5 w-5" disableTooltip />
-              <span class="font-bold">{p.display_name}</span>
-              <span class="text-xs text-muted-foreground">{p.via_stream_channel}</span>
+            <div class="rounded-xl border bg-card px-4 py-2">
+              <PlayerCard
+                name={p.display_name}
+                platform={p.platform}
+                userSlug={p.user_slug}
+                meta={p.via_stream_channel}
+              />
             </div>
           {/each}
         </div>
