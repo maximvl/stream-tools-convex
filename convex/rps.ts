@@ -86,6 +86,7 @@ export const get = query({
   handler: async (ctx, args) => {
     const t = await ctx.db.get(args.id)
     if (!t) return null
+    const winner = t.winner_participant_id ? await ctx.db.get(t.winner_participant_id) : null
     return {
       id: t._id,
       owner_stream_channel: t.owner_stream_channel,
@@ -94,6 +95,7 @@ export const get = query({
       current_round: t.current_round,
       round_seconds: t.round_seconds,
       winner_participant_id: t.winner_participant_id,
+      winner_display_name: winner?.display_name,
       created_at: t.created_at,
       started_at: t.started_at,
       finished_at: t.finished_at,
@@ -104,13 +106,14 @@ export const get = query({
 // Channel-keyed lookup for the frontend route: the page id is the bare
 // streamer channel name (`/rps/foo`). If several platforms share the slug,
 // platform priority wins (twitch, kick, vkvideo, wtv); then registration is
-// preferred over running, then newest. Returns null when nothing is live.
+// preferred over running over finished, then newest. Finished tournaments
+// stay visible so the final screen persists until the next one starts.
 export const getByOwnerChannel = query({
   args: { channel: v.string() },
   handler: async (ctx, args) => {
     const slug = args.channel.trim().toLowerCase()
     if (!slug) return null
-    const [registration, running] = await Promise.all([
+    const [registration, running, finished] = await Promise.all([
       ctx.db
         .query('rps_tournaments')
         .withIndex('by_status', (q) => q.eq('status', 'registration'))
@@ -119,12 +122,17 @@ export const getByOwnerChannel = query({
         .query('rps_tournaments')
         .withIndex('by_status', (q) => q.eq('status', 'running'))
         .collect(),
+      ctx.db
+        .query('rps_tournaments')
+        .withIndex('by_status', (q) => q.eq('status', 'finished'))
+        .collect(),
     ])
-    const live = [...registration, ...running].filter((t) => {
+    const live = [...registration, ...running, ...finished].filter((t) => {
       const sep = t.owner_stream_channel.indexOf('/')
       return sep >= 0 && t.owner_stream_channel.slice(sep + 1) === slug
     })
     if (live.length === 0) return null
+    const statusRank = { registration: 0, running: 1, finished: 2 } as const
     const identityOf = (owner: string) => {
       try {
         const identity = parseIdentity(owner)
@@ -139,11 +147,12 @@ export const getByOwnerChannel = query({
         identityOf(b.owner_stream_channel),
       )
       if (pri !== 0) return pri
-      if (a.status !== b.status) return a.status === 'registration' ? -1 : 1
+      if (a.status !== b.status) return statusRank[a.status] - statusRank[b.status]
       return b.created_at - a.created_at
     })
     const t = live[0]
     if (!t) return null
+    const winner = t.winner_participant_id ? await ctx.db.get(t.winner_participant_id) : null
     return {
       id: t._id,
       owner_stream_channel: t.owner_stream_channel,
@@ -152,6 +161,7 @@ export const getByOwnerChannel = query({
       current_round: t.current_round,
       round_seconds: t.round_seconds,
       winner_participant_id: t.winner_participant_id,
+      winner_display_name: winner?.display_name,
       created_at: t.created_at,
       started_at: t.started_at,
       finished_at: t.finished_at,

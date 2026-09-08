@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import { useConvexClient, useQuery } from 'convex-svelte'
   import { api } from '../../../../convex/_generated/api.js'
   import { Button } from '$lib/components/ui/button'
   import ServerIcon from '$lib/components/common/ServerIcon.svelte'
   import {
+    createTournament,
     startTournament,
+    tournamentHref,
     tournamentTitle,
     type TournamentId,
     type TournamentView,
@@ -39,6 +42,8 @@
 
   let starting = $state(false)
   let startError = $state<string | null>(null)
+  let creatingNext = $state(false)
+  let nextError = $state<string | null>(null)
 
   async function onStart() {
     starting = true
@@ -49,6 +54,19 @@
       startError = e instanceof Error ? e.message : 'Failed to start'
     } finally {
       starting = false
+    }
+  }
+
+  async function onNewTournament() {
+    creatingNext = true
+    nextError = null
+    try {
+      const res = await createTournament(convex)
+      await goto(tournamentHref(res.owner_stream_channel))
+    } catch (e) {
+      nextError = e instanceof Error ? e.message : 'Не вышло создать турнир'
+    } finally {
+      creatingNext = false
     }
   }
 </script>
@@ -76,13 +94,38 @@
   </div>
 
   {#if tournament.status === 'finished'}
-    <div class="rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-8 text-center">
+    <div
+      class="flex flex-col items-center gap-4 rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-8 text-center"
+    >
       {#if winner}
-        <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
-        <p class="mt-1 text-3xl font-black text-yellow-400 uppercase">{winner.display_name}</p>
-        <p class="mt-1 text-sm text-muted-foreground">{winner.wins} побед</p>
+        <div>
+          <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
+          <p class="mt-1 text-3xl font-black text-yellow-400 uppercase">{winner.display_name}</p>
+          <p class="mt-1 text-sm text-muted-foreground">{winner.wins} побед</p>
+        </div>
+      {:else if tournament.winner_display_name}
+        <div>
+          <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
+          <p class="mt-1 text-3xl font-black text-yellow-400 uppercase">
+            {tournament.winner_display_name}
+          </p>
+        </div>
       {:else}
         <p class="text-2xl font-black">Никто не выжил — победителя нет</p>
+      {/if}
+      <Button
+        class="rounded-2xl bg-green-600 px-10 py-5 text-lg font-black tracking-tighter uppercase shadow-xl transition-all hover:scale-105 hover:bg-green-500 active:scale-95 disabled:opacity-50"
+        onclick={onNewTournament}
+        disabled={creatingNext || !hasConfirmedAuth}
+      >
+        {creatingNext ? 'Создаём…' : 'Новый турнир'}
+      </Button>
+      {#if nextError}
+        <p class="text-sm text-red-500">{nextError}</p>
+      {:else if !hasConfirmedAuth}
+        <p class="text-sm text-amber-400">
+          Подтверди аккаунт хотя бы одного канала (код в чат), чтобы создать турнир.
+        </p>
       {/if}
     </div>
   {/if}

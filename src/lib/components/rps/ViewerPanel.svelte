@@ -301,6 +301,21 @@
     {/if}
   {:else}
     <div class="flex flex-col gap-6">
+      {#if tournament.status === 'finished'}
+        {@const myChamp = entries.some((e) => e.status === 'champion')}
+        <div class="rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-6 text-center">
+          {#if myChamp}
+            <p class="text-3xl font-black text-yellow-400 uppercase">Ты — чемпион! 🏆</p>
+          {:else if tournament.winner_display_name}
+            <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
+            <p class="mt-1 text-2xl font-black text-yellow-400 uppercase">
+              {tournament.winner_display_name}
+            </p>
+          {:else}
+            <p class="text-2xl font-black">Никто не выжил — победителя нет</p>
+          {/if}
+        </div>
+      {/if}
       {#each grouped as g (g.entry.id as string)}
         {#if sessionId}
           <MoveBoard entry={g.entry} matches={g.matches} {sessionId} />

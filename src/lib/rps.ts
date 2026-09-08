@@ -138,6 +138,7 @@ export type TournamentView = {
   current_round: number
   round_seconds: number
   winner_participant_id?: unknown
+  winner_display_name?: string
   created_at: number
   started_at?: number
   finished_at?: number

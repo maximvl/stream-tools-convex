@@ -53,7 +53,7 @@ export const makeRound = internalMutation({
         tournament_id: args.tournament_id,
         platform: ownerPlatform,
         user_slug: `bot-r${round}-${Math.floor(Math.random() * 1e6)}`,
-        display_name: '// BOT',
+        display_name: 'BOT',
         via_stream_channel: t.stream_channels[0] ?? t.owner_stream_channel,
         wins: carry.wins,
         status: 'active',
@@ -67,6 +67,8 @@ export const makeRound = internalMutation({
     let created = 0
     for (const [a, b] of pairs) {
       const deadline_at = now + t.round_seconds * 1000
+      // Bot moves are rolled at creation: a bot match then concludes the
+      // moment the human picks (both moves present triggers resolve).
       const matchId = await ctx.db.insert('rps_matches', {
         tournament_id: args.tournament_id,
         round,
@@ -75,6 +77,7 @@ export const makeRound = internalMutation({
         status: 'pending',
         deadline_at,
         created_at: now,
+        ...(a.is_bot ? { move_a: randomMove() } : b.is_bot ? { move_b: randomMove() } : {}),
       })
       await ctx.scheduler.runAt(deadline_at, internal.rpsMatches.resolveMatch, {
         match_id: matchId,
@@ -182,6 +185,8 @@ export const resolveMatch = internalMutation({
           status: 'pending',
           deadline_at,
           created_at: now,
+          ...(pa.is_bot ? { move_a: randomMove() } : {}),
+          ...(pb.is_bot ? { move_b: randomMove() } : {}),
         })
         await ctx.scheduler.runAt(deadline_at, internal.rpsMatches.resolveMatch, {
           match_id: replayId,

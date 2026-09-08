@@ -44,10 +44,8 @@
     <p class="mt-12 text-muted-foreground">Загрузка турнира…</p>
   {:else if !data || !tournamentId}
     <div class="mt-12 flex max-w-xl flex-col items-center gap-4 text-center">
-      <h1 class="text-3xl font-extrabold">Нет живого турнира у «{channel}»</h1>
-      <p class="text-muted-foreground">
-        Турнир ещё не создан или уже завершён. Загляни в список активных.
-      </p>
+      <h1 class="text-3xl font-extrabold">У «{channel}» нет турниров</h1>
+      <p class="text-muted-foreground">Турнир ещё не создан. Загляни в список активных.</p>
       <a href="/rps" class="font-bold text-primary hover:underline">Все турниры</a>
     </div>
   {:else if isOwner}
