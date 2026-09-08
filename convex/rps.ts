@@ -2,7 +2,8 @@ import { mutation, query } from './_generated/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import { requireOwner } from './rpsLib'
-import { authChannelsForSession, primaryChannelForSession } from './authLib'
+import { authChannelsForSession, compareChannelPriority, primaryChannelForSession } from './authLib'
+import { parseIdentity, streamChannelFor } from './userIdentity'
 
 const ROUND_SECONDS = 10
 
@@ -24,7 +25,7 @@ export const create = mutation({
       round_seconds: ROUND_SECONDS,
       created_at: Date.now(),
     })
-    return { id }
+    return { id, owner_stream_channel: primary.stream_channel }
   },
 })
 
@@ -70,6 +71,7 @@ export const list = query({
       .sort((a, b) => b.created_at - a.created_at)
       .map((t) => ({
         id: t._id,
+        owner_stream_channel: t.owner_stream_channel,
         stream_channels: t.stream_channels,
         status: t.status,
         current_round: t.current_round,
@@ -83,6 +85,64 @@ export const get = query({
   args: { id: v.id('rps_tournaments') },
   handler: async (ctx, args) => {
     const t = await ctx.db.get(args.id)
+    if (!t) return null
+    return {
+      id: t._id,
+      owner_stream_channel: t.owner_stream_channel,
+      stream_channels: t.stream_channels,
+      status: t.status,
+      current_round: t.current_round,
+      round_seconds: t.round_seconds,
+      winner_participant_id: t.winner_participant_id,
+      created_at: t.created_at,
+      started_at: t.started_at,
+      finished_at: t.finished_at,
+    }
+  },
+})
+
+// Channel-keyed lookup for the frontend route: the page id is the bare
+// streamer channel name (`/rps/foo`). If several platforms share the slug,
+// platform priority wins (twitch, kick, vkvideo, wtv); then registration is
+// preferred over running, then newest. Returns null when nothing is live.
+export const getByOwnerChannel = query({
+  args: { channel: v.string() },
+  handler: async (ctx, args) => {
+    const slug = args.channel.trim().toLowerCase()
+    if (!slug) return null
+    const [registration, running] = await Promise.all([
+      ctx.db
+        .query('rps_tournaments')
+        .withIndex('by_status', (q) => q.eq('status', 'registration'))
+        .collect(),
+      ctx.db
+        .query('rps_tournaments')
+        .withIndex('by_status', (q) => q.eq('status', 'running'))
+        .collect(),
+    ])
+    const live = [...registration, ...running].filter((t) => {
+      const sep = t.owner_stream_channel.indexOf('/')
+      return sep >= 0 && t.owner_stream_channel.slice(sep + 1) === slug
+    })
+    if (live.length === 0) return null
+    const identityOf = (owner: string) => {
+      try {
+        const identity = parseIdentity(owner)
+        return { platform: identity.platform, user_slug: identity.user_slug }
+      } catch {
+        return { platform: '', user_slug: '' }
+      }
+    }
+    live.sort((a, b) => {
+      const pri = compareChannelPriority(
+        identityOf(a.owner_stream_channel),
+        identityOf(b.owner_stream_channel),
+      )
+      if (pri !== 0) return pri
+      if (a.status !== b.status) return a.status === 'registration' ? -1 : 1
+      return b.created_at - a.created_at
+    })
+    const t = live[0]
     if (!t) return null
     return {
       id: t._id,

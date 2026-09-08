@@ -57,6 +57,16 @@
     </li>
     <li>
       <a
+        href="/rps"
+        class="transition-opacity hover:opacity-100 {page.url.pathname.startsWith('/rps')
+          ? 'text-primary'
+          : 'opacity-60'}"
+      >
+        КНБ
+      </a>
+    </li>
+    <li>
+      <a
         href="/word"
         class="transition-opacity hover:opacity-100 {page.url.pathname.startsWith('/word')
           ? 'text-primary'
