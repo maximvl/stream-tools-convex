@@ -1,6 +1,59 @@
-import { query, internalQuery, internalMutation } from './_generated/server'
+import { query, internalQuery, internalMutation, type MutationCtx } from './_generated/server'
 import { v } from 'convex/values'
 import { parseIdentity, cacheKeyFor, streamChannelFor } from './userIdentity'
+
+// Primary channel priority: twitch > kick > vkvideo > wtv.
+const PLATFORM_PRIORITY: Record<string, number> = { twitch: 0, kick: 1, vkvideo: 2, wtv: 3 }
+
+export function compareChannelPriority(
+  a: { platform: string; user_slug: string },
+  b: { platform: string; user_slug: string },
+): number {
+  return (
+    (PLATFORM_PRIORITY[a.platform] ?? 99) - (PLATFORM_PRIORITY[b.platform] ?? 99) ||
+    a.user_slug.localeCompare(b.user_slug)
+  )
+}
+
+export type AuthChannel = {
+  platform: 'vkvideo' | 'twitch' | 'kick' | 'wtv'
+  user_slug: string
+  stream_channel: string
+  via_channel: string | undefined
+  updated_at: number
+}
+
+// All stream channels authenticated under one browser-wide session,
+// sorted by platform priority. Sessions are lookup keys only — identity
+// lives in user_auth rows.
+export async function authChannelsForSession(
+  ctx: MutationCtx,
+  session_id: string,
+): Promise<AuthChannel[]> {
+  const rows = await ctx.db
+    .query('user_auth')
+    .withIndex('by_session', (q) => q.eq('session_id', session_id))
+    .collect()
+  return rows
+    .map((r) => ({
+      platform: r.platform,
+      user_slug: r.user_slug,
+      stream_channel: streamChannelFor(r.platform, r.user_slug),
+      via_channel: r.via_channel,
+      updated_at: r.updated_at,
+    }))
+    .sort(compareChannelPriority)
+}
+
+// The single representative channel for a session: first by platform
+// priority (twitch, kick, vkvideo, wtv).
+export async function primaryChannelForSession(
+  ctx: MutationCtx,
+  session_id: string,
+): Promise<AuthChannel | undefined> {
+  const channels = await authChannelsForSession(ctx, session_id)
+  return channels[0]
+}
 
 // Internal helpers used by the `confirm` action (avoids circular imports).
 export const getKey = internalQuery({
@@ -74,12 +127,14 @@ export const channelsForSession = query({
       .query('user_auth')
       .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
       .collect()
-    return rows.map((r) => ({
-      stream_channel: streamChannelFor(r.platform, r.user_slug),
-      platform: r.platform,
-      user_slug: r.user_slug,
-      via_channel: r.via_channel,
-      updated_at: r.updated_at,
-    }))
+    return rows
+      .map((r) => ({
+        stream_channel: streamChannelFor(r.platform, r.user_slug),
+        platform: r.platform,
+        user_slug: r.user_slug,
+        via_channel: r.via_channel,
+        updated_at: r.updated_at,
+      }))
+      .sort(compareChannelPriority)
   },
 })

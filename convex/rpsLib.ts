@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery, type MutationCtx } from './_generated/server'
 import { v, type Infer } from 'convex/values'
-import { streamChannelFor } from './userIdentity'
+import { authChannelsForSession } from './authLib'
 
 export const moveValidator = v.union(v.literal('rock'), v.literal('paper'), v.literal('scissors'))
 export type Move = Infer<typeof moveValidator>
@@ -66,20 +66,6 @@ export const saveProofs = internalMutation({
 
 // ---- Match engine shared helpers (used by rps.ts + rpsMatches.ts) ----
 
-// All stream identities (platform/slug pairs) authenticated under a session.
-// Sessions are lookup keys only — identity lives in user_auth rows.
-export async function identitiesForSession(ctx: MutationCtx, session_id: string) {
-  const rows = await ctx.db
-    .query('user_auth')
-    .withIndex('by_session', (q) => q.eq('session_id', session_id))
-    .collect()
-  return rows.map((r) => ({
-    platform: r.platform,
-    user_slug: r.user_slug,
-    stream_channel: streamChannelFor(r.platform, r.user_slug),
-  }))
-}
-
 // Owner gate for owner-only actions (start, cancel): the caller's session
 // must resolve to the tournament's owner identity. A new browser that
 // re-proves the same channel passes too.
@@ -88,7 +74,7 @@ export async function requireOwner(
   tournament: { owner_stream_channel: string },
   session_id: string,
 ): Promise<void> {
-  const owned = await identitiesForSession(ctx, session_id)
+  const owned = await authChannelsForSession(ctx, session_id)
   if (!owned.some((o) => o.stream_channel === tournament.owner_stream_channel))
     throw new Error('Not the tournament owner')
 }

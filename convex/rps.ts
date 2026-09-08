@@ -1,25 +1,24 @@
 import { mutation, query } from './_generated/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
-import { identitiesForSession, requireOwner } from './rpsLib'
+import { requireOwner } from './rpsLib'
+import { authChannelsForSession, primaryChannelForSession } from './authLib'
 
 const ROUND_SECONDS = 10
 
 // Creates a tournament from a bare owner session id: the session is only
 // used to fetch the owner's stream channels; the stored owner reference is
-// the channel identity. No title is stored — clients derive it from
+// the primary channel identity. No title is stored — clients derive it from
 // `stream_channels`.
 export const create = mutation({
   args: { owner_session_id: v.string() },
   handler: async (ctx, args) => {
-    const owned = await identitiesForSession(ctx, args.owner_session_id)
-    if (owned.length === 0) throw new Error('No authenticated stream channel for this session')
-    const sorted = [...owned].sort((a, b) => b.stream_channel.localeCompare(a.stream_channel))
-    const primary = sorted[0]
+    const primary = await primaryChannelForSession(ctx, args.owner_session_id)
     if (!primary) throw new Error('No authenticated stream channel for this session')
+    const channels = await authChannelsForSession(ctx, args.owner_session_id)
     const id = await ctx.db.insert('rps_tournaments', {
       owner_stream_channel: primary.stream_channel,
-      stream_channels: sorted.map((r) => r.stream_channel),
+      stream_channels: channels.map((c) => c.stream_channel),
       status: 'registration',
       current_round: 0,
       round_seconds: ROUND_SECONDS,
