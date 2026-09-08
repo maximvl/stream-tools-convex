@@ -18,6 +18,7 @@ import type * as migration from "../migration.js";
 import type * as rps from "../rps.js";
 import type * as rpsAuth from "../rpsAuth.js";
 import type * as rpsLib from "../rpsLib.js";
+import type * as rpsMatches from "../rpsMatches.js";
 import type * as userIdentity from "../userIdentity.js";
 
 import type {
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   rps: typeof rps;
   rpsAuth: typeof rpsAuth;
   rpsLib: typeof rpsLib;
+  rpsMatches: typeof rpsMatches;
   userIdentity: typeof userIdentity;
 }>;
 

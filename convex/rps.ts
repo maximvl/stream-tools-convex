@@ -1,35 +1,9 @@
-import { mutation, query, type MutationCtx } from './_generated/server'
+import { mutation, query } from './_generated/server'
 import { v } from 'convex/values'
-import { streamChannelFor } from './userIdentity'
+import { internal } from './_generated/api'
+import { identitiesForSession, requireOwner } from './rpsLib'
 
 const ROUND_SECONDS = 10
-
-// All stream identities (platform/slug pairs) authenticated under a session.
-// Sessions are lookup keys only — identity lives in user_auth rows.
-async function identitiesForSession(ctx: MutationCtx, session_id: string) {
-  const rows = await ctx.db
-    .query('user_auth')
-    .withIndex('by_session', (q) => q.eq('session_id', session_id))
-    .collect()
-  return rows.map((r) => ({
-    platform: r.platform,
-    user_slug: r.user_slug,
-    stream_channel: streamChannelFor(r.platform, r.user_slug),
-  }))
-}
-
-// Owner gate for future owner-only actions (start, cancel): the caller's
-// session must resolve to the tournament's owner identity. A new browser
-// that re-proves the same channel passes too.
-export async function requireOwner(
-  ctx: MutationCtx,
-  tournament: { owner_stream_channel: string },
-  session_id: string,
-): Promise<void> {
-  const owned = await identitiesForSession(ctx, session_id)
-  if (!owned.some((o) => o.stream_channel === tournament.owner_stream_channel))
-    throw new Error('Not the tournament owner')
-}
 
 // Creates a tournament from a bare owner session id: the session is only
 // used to fetch the owner's stream channels; the stored owner reference is
@@ -52,6 +26,30 @@ export const create = mutation({
       created_at: Date.now(),
     })
     return { id }
+  },
+})
+
+// Owner starts the tournament after registration. Rounds then run
+// automatically until a winner is found — the streamer only observes.
+export const start = mutation({
+  args: { tournament_id: v.id('rps_tournaments'), owner_session_id: v.string() },
+  handler: async (ctx, args) => {
+    const t = await ctx.db.get(args.tournament_id)
+    if (!t) throw new Error('Tournament not found')
+    if (t.status !== 'registration') throw new Error('Tournament already started')
+    await requireOwner(ctx, t, args.owner_session_id)
+    const actives = await ctx.db
+      .query('rps_participants')
+      .withIndex('by_tournament', (q) => q.eq('tournament_id', args.tournament_id))
+      .collect()
+    if (actives.filter((p) => p.status === 'active').length < 1) throw new Error('No participants')
+    await ctx.db.patch(args.tournament_id, {
+      status: 'running',
+      started_at: Date.now(),
+      current_round: 1,
+    })
+    await ctx.runMutation(internal.rpsMatches.makeRound, { tournament_id: args.tournament_id })
+    return { round: 1 }
   },
 })
 
