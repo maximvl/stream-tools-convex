@@ -1,6 +1,29 @@
-import { query, internalQuery, internalMutation, type MutationCtx } from './_generated/server'
+import {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+  type MutationCtx,
+} from './_generated/server'
 import { v } from 'convex/values'
 import { parseIdentity, cacheKeyFor, streamChannelFor } from './userIdentity'
+
+const SESSION_LEN = 15
+
+function makeSessionId(len: number): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(len))
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('')
+}
+
+// Mints a bare browser session with no channel attached (e.g. for viewers
+// who own no channels yet). Identity is bound later via auth flows.
+export const mintSession = mutation({
+  args: {},
+  handler: async () => {
+    return { session_id: makeSessionId(SESSION_LEN) }
+  },
+})
 
 // Primary channel priority: twitch > kick > vkvideo > wtv.
 const PLATFORM_PRIORITY: Record<string, number> = { twitch: 0, kick: 1, vkvideo: 2, wtv: 3 }

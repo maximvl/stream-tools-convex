@@ -3,7 +3,7 @@
 import type { ConvexClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api.js'
 import type { Id } from '../../convex/_generated/dataModel.js'
-import { getSessionId } from './session'
+import { getSessionId, setSessionId } from './session'
 
 export type TournamentId = Id<'rps_tournaments'>
 export type MatchId = Id<'rps_matches'>
@@ -11,9 +11,18 @@ export type ParticipantId = Id<'rps_participants'>
 export type RpsMove = 'rock' | 'paper' | 'scissors'
 
 // Single global browser session for streamer and viewers alike.
-// Undefined until the backend mints one (auth check bootstrap).
+// Returns the stored one, or mints a bare session via backend (viewers who
+// own no channels yet have nothing to bootstrap from).
 export function rpsSessionId(): string | undefined {
   return getSessionId()
+}
+
+export async function ensureRpsSession(client: ConvexClient): Promise<string> {
+  const existing = getSessionId()
+  if (existing) return existing
+  const res = await client.mutation(api.authLib.mintSession, {})
+  setSessionId(res.session_id)
+  return res.session_id
 }
 
 // Display name derived from the primary (first, priority-sorted) channel.
@@ -59,7 +68,7 @@ export async function requestViewerCode(
 
 export type RpsProof = {
   via_stream_channel: string
-  platform: 'vkvideo' | 'twitch' | 'kick' | 'wtv'
+  platform: RpsPlatform
   user_slug: string
   display_name: string
 }
@@ -111,4 +120,76 @@ export async function submitRpsMove(
   },
 ): Promise<{ ok: true }> {
   return await client.mutation(api.rpsMatches.submitMove, args)
+}
+
+export const MOVE_GLYPH: Record<RpsMove, string> = {
+  rock: '🪨',
+  paper: '📄',
+  scissors: '✂️',
+}
+
+export type RpsPlatform = 'vkvideo' | 'twitch' | 'kick' | 'wtv'
+
+export type TournamentView = {
+  id: TournamentId
+  owner_stream_channel: string
+  stream_channels: string[]
+  status: 'registration' | 'running' | 'finished'
+  current_round: number
+  round_seconds: number
+  winner_participant_id?: unknown
+  created_at: number
+  started_at?: number
+  finished_at?: number
+}
+
+export type ParticipantCard = {
+  id: unknown
+  platform: RpsPlatform
+  user_slug: string
+  display_name: string
+  via_stream_channel: string
+  wins: number
+  status: string
+  is_bot: boolean
+}
+
+export type RoundMatchView = {
+  id: unknown
+  round: number
+  status: 'pending' | 'resolved'
+  winner_id?: unknown
+  is_draw?: boolean
+  move_a?: RpsMove
+  move_b?: RpsMove
+  deadline_at: number
+  resolved_at?: number
+  a: ParticipantCard | null
+  b: ParticipantCard | null
+}
+
+export type MyEntryView = {
+  id: unknown
+  platform: RpsPlatform
+  user_slug: string
+  display_name: string
+  via_stream_channel: string
+  wins: number
+  status: string
+  eliminated_in_round?: number
+  is_bot: boolean
+}
+
+export type BoardMatchView = {
+  id: unknown
+  round: number
+  status: string
+  winner_id?: unknown
+  is_draw?: boolean
+  my_move?: RpsMove
+  opp_move?: RpsMove
+  i_won?: boolean
+  deadline_at: number
+  me: ParticipantCard | null
+  opp: ParticipantCard | null
 }

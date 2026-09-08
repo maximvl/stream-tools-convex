@@ -218,7 +218,11 @@ export const myEntries = query({
 })
 
 // Registration needs only (tournament_id, viewer_session_id): entries are
-// created from the stored chat proofs, one per proof (multi-entry).
+// created from the stored chat proofs, one per proof (multi-entry). If the
+// session already has auth (user_auth rows — e.g. returning viewer or authed
+// elsewhere), identities join directly without any code: via reuses the
+// identity's own channel when it belongs to this tournament, else the
+// tournament's primary channel.
 export const join = mutation({
   args: { tournament_id: v.id('rps_tournaments'), viewer_session_id: v.string() },
   handler: async (ctx, args) => {
@@ -231,8 +235,43 @@ export const join = mutation({
         q.eq('tournament_id', args.tournament_id).eq('viewer_session_id', args.viewer_session_id),
       )
       .unique()
-    if (!code || code.expires_at <= Date.now()) throw new Error('Code expired, request a new one')
-    if (code.proofs.length === 0) throw new Error('Confirm your code in chat first')
+    const codeLive = code && code.expires_at > Date.now() ? code : null
+    const candidates: {
+      platform: 'vkvideo' | 'twitch' | 'kick' | 'wtv'
+      user_slug: string
+      display_name: string
+      via_stream_channel: string
+    }[] = (codeLive?.proofs ?? []).map((p) => ({
+      platform: p.platform,
+      user_slug: p.user_slug,
+      display_name: p.display_name,
+      via_stream_channel: p.via_stream_channel,
+    }))
+    const covered = new Set(candidates.map((c) => `${c.platform}|${c.user_slug}`))
+    const identities = await ctx.db
+      .query('user_auth')
+      .withIndex('by_session', (q) => q.eq('session_id', args.viewer_session_id))
+      .collect()
+    for (const ident of identities) {
+      const key = `${ident.platform}|${ident.user_slug}`
+      if (covered.has(key)) continue
+      covered.add(key)
+      const via =
+        ident.via_channel && t.stream_channels.includes(ident.via_channel)
+          ? ident.via_channel
+          : t.stream_channels[0]
+      if (!via) continue
+      candidates.push({
+        platform: ident.platform,
+        user_slug: ident.user_slug,
+        display_name: ident.user_slug,
+        via_stream_channel: via,
+      })
+    }
+    if (candidates.length === 0) {
+      if (code && !codeLive) throw new Error('Code expired, request a new one')
+      throw new Error('Confirm your code in chat first')
+    }
     const existing = await ctx.db
       .query('rps_participants')
       .withIndex('by_tournament', (q) => q.eq('tournament_id', args.tournament_id))
@@ -241,7 +280,7 @@ export const join = mutation({
       existing.map((e) => `${e.platform}|${e.user_slug}|${e.via_stream_channel}`),
     )
     const out: { id: unknown; display_name: string; via_stream_channel: string }[] = []
-    for (const p of code.proofs) {
+    for (const p of candidates) {
       const key = `${p.platform}|${p.user_slug}|${p.via_stream_channel}`
       const dup = existing.find(
         (e) =>
