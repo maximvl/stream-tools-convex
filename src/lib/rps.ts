@@ -140,7 +140,12 @@ export type TournamentView = {
   current_round: number
   round_seconds: number
   winner_participant_id?: unknown
-  winner_display_name?: string
+  winner: {
+    id: unknown
+    platform: RpsPlatform
+    user_slug: string
+    display_name: string
+  } | null
   created_at: number
   started_at?: number
   finished_at?: number

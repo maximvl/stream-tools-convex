@@ -98,17 +98,27 @@
       class="flex flex-col items-center gap-4 rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-8 text-center"
     >
       {#if winner}
-        <div>
+        <div class="flex flex-col items-center gap-2">
           <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
-          <p class="mt-1 text-3xl font-black text-yellow-400 uppercase">{winner.display_name}</p>
-          <p class="mt-1 text-sm text-muted-foreground">{winner.wins} побед</p>
+          <div class="text-2xl">
+            <PlayerCard
+              name={winner.display_name}
+              platform={winner.platform}
+              userSlug={winner.user_slug}
+              meta={`${winner.wins} побед`}
+            />
+          </div>
         </div>
-      {:else if tournament.winner_display_name}
-        <div>
+      {:else if tournament.winner}
+        <div class="flex flex-col items-center gap-2">
           <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
-          <p class="mt-1 text-3xl font-black text-yellow-400 uppercase">
-            {tournament.winner_display_name}
-          </p>
+          <div class="text-2xl">
+            <PlayerCard
+              name={tournament.winner.display_name}
+              platform={tournament.winner.platform}
+              userSlug={tournament.winner.user_slug}
+            />
+          </div>
         </div>
       {:else}
         <p class="text-2xl font-black">Никто не выжил — победителя нет</p>

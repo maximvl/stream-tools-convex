@@ -95,7 +95,14 @@ export const get = query({
       current_round: t.current_round,
       round_seconds: t.round_seconds,
       winner_participant_id: t.winner_participant_id,
-      winner_display_name: winner?.display_name,
+      winner: winner
+        ? {
+            id: winner._id,
+            platform: winner.platform,
+            user_slug: winner.user_slug,
+            display_name: winner.display_name,
+          }
+        : null,
       created_at: t.created_at,
       started_at: t.started_at,
       finished_at: t.finished_at,
@@ -161,7 +168,14 @@ export const getByOwnerChannel = query({
       current_round: t.current_round,
       round_seconds: t.round_seconds,
       winner_participant_id: t.winner_participant_id,
-      winner_display_name: winner?.display_name,
+      winner: winner
+        ? {
+            id: winner._id,
+            platform: winner.platform,
+            user_slug: winner.user_slug,
+            display_name: winner.display_name,
+          }
+        : null,
       created_at: t.created_at,
       started_at: t.started_at,
       finished_at: t.finished_at,

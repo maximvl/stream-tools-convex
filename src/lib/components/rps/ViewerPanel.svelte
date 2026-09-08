@@ -17,6 +17,7 @@
     type TournamentView,
   } from '$lib/rps'
   import MoveBoard from './MoveBoard.svelte'
+  import PlayerCard from './PlayerCard.svelte'
   import RoundMatches from './RoundMatches.svelte'
 
   let {
@@ -301,15 +302,28 @@
   {:else}
     <div class="flex flex-col gap-6">
       {#if tournament.status === 'finished'}
-        {@const myChamp = entries.some((e) => e.status === 'champion')}
-        <div class="rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-6 text-center">
+        {@const myChamp = entries.find((e) => e.status === 'champion')}
+        <div
+          class="flex flex-col items-center gap-2 rounded-3xl border border-yellow-500/40 bg-yellow-500/10 p-6 text-center"
+        >
           {#if myChamp}
             <p class="text-3xl font-black text-yellow-400 uppercase">Ты — чемпион! 🏆</p>
-          {:else if tournament.winner_display_name}
+            <div class="text-xl">
+              <PlayerCard
+                name={myChamp.display_name}
+                platform={myChamp.platform}
+                userSlug={myChamp.user_slug}
+              />
+            </div>
+          {:else if tournament.winner}
             <p class="text-sm tracking-widest text-muted-foreground uppercase">Победитель</p>
-            <p class="mt-1 text-2xl font-black text-yellow-400 uppercase">
-              {tournament.winner_display_name}
-            </p>
+            <div class="text-xl">
+              <PlayerCard
+                name={tournament.winner.display_name}
+                platform={tournament.winner.platform}
+                userSlug={tournament.winner.user_slug}
+              />
+            </div>
           {:else}
             <p class="text-2xl font-black">Никто не выжил — победителя нет</p>
           {/if}

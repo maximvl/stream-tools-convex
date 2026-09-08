@@ -294,7 +294,7 @@ export const matchesForRound = query({
       .collect()
     const byId = new Map(all.map((p) => [p._id, p]))
     return matches
-      .sort((a, b) => a.created_at - b.created_at)
+      .sort((a, b) => b.created_at - a.created_at)
       .map((m) => {
         const a = byId.get(m.a_id)
         const b = byId.get(m.b_id)
@@ -340,7 +340,7 @@ export const myMatches = query({
     const byId = new Map(all.map((p) => [p._id, p]))
     return matches
       .filter((m) => mineIds.has(m.a_id) || mineIds.has(m.b_id))
-      .sort((a, b) => a.round - b.round || a.created_at - b.created_at)
+      .sort((a, b) => b.round - a.round || b.created_at - a.created_at)
       .map((m) => {
         const me = mineIds.has(m.a_id) ? byId.get(m.a_id) : byId.get(m.b_id)
         const opp = mineIds.has(m.a_id) ? byId.get(m.b_id) : byId.get(m.a_id)
