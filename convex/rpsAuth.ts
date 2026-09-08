@@ -112,6 +112,7 @@ export const confirm = action({
       await ctx.runMutation(internal.authLib.upsertSession, {
         stream_channel: streamChannelFor(p.platform, p.user_slug),
         session_id: args.viewer_session_id,
+        via_channel: p.via_stream_channel,
       })
     }
     const proofs = await ctx.runMutation(internal.rpsLib.saveProofs, {

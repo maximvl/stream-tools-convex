@@ -19,7 +19,11 @@ export const getKey = internalQuery({
 })
 
 export const upsertSession = internalMutation({
-  args: { stream_channel: v.string(), session_id: v.string() },
+  args: {
+    stream_channel: v.string(),
+    session_id: v.string(),
+    via_channel: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { platform, user_slug } = parseIdentity(args.stream_channel)
     const existing = await ctx.db
@@ -30,6 +34,7 @@ export const upsertSession = internalMutation({
       await ctx.db.patch(existing._id, {
         session_id: args.session_id,
         updated_at: Date.now(),
+        via_channel: args.via_channel,
       })
     } else {
       await ctx.db.insert('user_auth', {
@@ -37,6 +42,7 @@ export const upsertSession = internalMutation({
         platform,
         session_id: args.session_id,
         updated_at: Date.now(),
+        via_channel: args.via_channel,
       })
     }
   },
@@ -72,6 +78,7 @@ export const channelsForSession = query({
       stream_channel: streamChannelFor(r.platform, r.user_slug),
       platform: r.platform,
       user_slug: r.user_slug,
+      via_channel: r.via_channel,
       updated_at: r.updated_at,
     }))
   },

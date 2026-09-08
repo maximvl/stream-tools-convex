@@ -1,0 +1,4 @@
+- Create auth system for regular users through interaction with streamer games
+- Make loto run through backend with syncing to players pages
+- Add loto "afk" mode for registered players, they can specify their numbers, winning text and super game participation
+- customizeable loto ticket?

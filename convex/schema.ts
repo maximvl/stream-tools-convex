@@ -29,6 +29,10 @@ export default defineSchema({
     platform,
     session_id: v.string(),
     updated_at: v.number(),
+    // Set when the identity was registered through another stream channel
+    // (e.g. an RPS viewer who proved their code in the owner's chat).
+    // Undefined for direct self-auth.
+    via_channel: v.optional(v.string()),
   })
     .index('by_user', ['platform', 'user_slug'])
     .index('by_session', ['session_id']),
