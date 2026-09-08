@@ -66,8 +66,9 @@ export const confirm = action({
     if (!code) return { authenticated: false as const, proofs: [] }
     if (code.expires_at <= Date.now()) return { authenticated: false as const, proofs: code.proofs }
     const tsFrom = Math.floor(Date.now() / 1000) - 5 * 60
-    const found: Proof[] = []
-    for (const ownerChannel of code.stream_channels) {
+    // Fire all chat fetches together — one slow/failed channel must not hold
+    // up the rest.
+    const scanChannel = async (ownerChannel: string): Promise<Proof[]> => {
       let platform: string
       let channel: string
       try {
@@ -75,17 +76,18 @@ export const confirm = action({
         platform = identity.platform
         channel = identity.user_slug
       } catch {
-        continue
+        return []
       }
       const params = new URLSearchParams({ server: platform, channel, tsFrom: String(tsFrom) })
       let res: Response
       try {
         res = await fetch(`https://chats.eventlab.dev/api/chat_messages?${params.toString()}`)
       } catch {
-        continue
+        return []
       }
-      if (!res.ok) continue
+      if (!res.ok) return []
       const data = (await res.json()) as ChatMessagesResponse
+      const sightings: Proof[] = []
       for (const m of data.messages ?? []) {
         if (
           typeof m.text === 'string' &&
@@ -93,15 +95,18 @@ export const confirm = action({
           typeof m.user?.displayName === 'string' &&
           m.user.displayName.length > 0
         ) {
-          found.push({
+          sightings.push({
             via_stream_channel: ownerChannel,
-            platform: platform as 'vkvideo' | 'twitch' | 'kick' | 'wtv',
+            platform: platform as Proof['platform'],
             user_slug: m.user.displayName.toLowerCase(),
             display_name: m.user.displayName,
           })
         }
       }
+      return sightings
     }
+    const settled = await Promise.allSettled(code.stream_channels.map(scanChannel))
+    const found: Proof[] = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
     // One user_auth row per distinct author identity, all sharing the
     // viewer's session (reuses the streamer auth storage verbatim).
     const seenIdentity = new Set<string>()
