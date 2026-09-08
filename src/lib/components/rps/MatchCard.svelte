@@ -31,6 +31,13 @@
         meta={`${match.a.wins} побед`}
         dim={resolved && winnerSide !== null && winnerSide !== 'a'}
       />
+      {#if !resolved}
+        {#if match.move_a_set}
+          <span class="text-xs font-bold text-green-400">Ход сделан ✓</span>
+        {:else}
+          <span class="animate-pulse text-xs text-muted-foreground">Думает…</span>
+        {/if}
+      {/if}
     {/if}
   </div>
 
@@ -71,6 +78,13 @@
         meta={`${match.b.wins} побед`}
         dim={resolved && winnerSide !== null && winnerSide !== 'b'}
       />
+      {#if !resolved}
+        {#if match.move_b_set}
+          <span class="text-xs font-bold text-green-400">Ход сделан ✓</span>
+        {:else}
+          <span class="animate-pulse text-xs text-muted-foreground">Думает…</span>
+        {/if}
+      {/if}
     {/if}
   </div>
 </div>

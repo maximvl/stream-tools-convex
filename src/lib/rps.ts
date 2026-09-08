@@ -170,6 +170,8 @@ export type RoundMatchView = {
   is_draw?: boolean
   move_a?: RpsMove
   move_b?: RpsMove
+  move_a_set: boolean
+  move_b_set: boolean
   deadline_at: number
   resolved_at?: number
   a: ParticipantCard | null
@@ -196,6 +198,7 @@ export type BoardMatchView = {
   is_draw?: boolean
   my_move?: RpsMove
   opp_move?: RpsMove
+  opp_moved: boolean
   i_won?: boolean
   deadline_at: number
   me: ParticipantCard | null

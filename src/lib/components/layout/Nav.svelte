@@ -25,7 +25,7 @@
         Лото
       </a>
     </li>
-    <li>
+    <!-- <li>
       <a
         href="/vote"
         class="transition-opacity hover:opacity-100 {page.url.pathname.startsWith('/vote')
@@ -34,7 +34,7 @@
       >
         Голосование
       </a>
-    </li>
+    </li> -->
     <li>
       <a
         href="/whenis"
@@ -65,7 +65,7 @@
         КНБ
       </a>
     </li>
-    <li>
+    <!-- <li>
       <a
         href="/word"
         class="transition-opacity hover:opacity-100 {page.url.pathname.startsWith('/word')
@@ -74,7 +74,7 @@
       >
         Угадай слово
       </a>
-    </li>
+    </li> -->
     <li>
       <a
         href="/game"

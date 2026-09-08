@@ -67,11 +67,11 @@
 
   <div class="flex w-full max-w-2xl flex-col items-center gap-3">
     <Button
-      class="w-full rounded-2xl bg-green-600 py-6 text-lg font-black shadow-xl transition-all hover:scale-105 hover:bg-green-500 active:scale-95 disabled:opacity-50"
+      class="w-full rounded-2xl bg-green-600 py-6 text-lg font-black shadow-xl transition-all hover:scale-105 hover:bg-green-500 disabled:opacity-50"
       onclick={onCreate}
       disabled={creating}
     >
-      {creating ? 'Создаём…' : 'Создать турнир'}
+      {creating ? 'Создаём…' : 'Новый турнир'}
     </Button>
     {#if createError}
       <p class="text-sm text-red-500">

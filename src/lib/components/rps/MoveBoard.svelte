@@ -29,7 +29,14 @@
   const convex = useConvexClient()
 
   const current = $derived(matches.find((m) => m.status === 'pending') ?? null)
-  const history = $derived(matches.filter((m) => m.status === 'resolved'))
+  // Latest resolved match stays on the arena in result mode until the next
+  // round (or the end) — it doesn't collapse into history right away.
+  const lastResolved = $derived(matches.find((m) => m.status === 'resolved') ?? null)
+  const history = $derived(
+    matches.filter((m) => m.status === 'resolved' && m.id !== lastResolved?.id),
+  )
+  const arena = $derived(current ?? lastResolved)
+  const interactive = $derived(arena?.status === 'pending' && entry.status === 'active')
 
   let now = $state(Date.now())
   $effect(() => {
@@ -91,35 +98,39 @@
     {/if}
   </div>
 
-  {#if current && entry.status === 'active'}
-    {@const opp = current.opp}
-    {@const picked = current.my_move ?? null}
+  {#if arena}
+    {@const match = arena}
+    {@const opp = match.opp}
+    {@const myPick = match.my_move ?? null}
+    {@const oppPick = match.status === 'resolved' ? (match.opp_move ?? null) : null}
     <div class="rounded-2xl border border-primary/30 bg-primary/5 p-4">
       <div class="flex items-stretch justify-center gap-2 sm:gap-4">
         <!-- My side: info left, move buttons right of it -->
         <div class="flex flex-1 flex-col items-center justify-center gap-2">
-          {#if current.me}
+          {#if match.me}
             <PlayerCard
-              name={current.me.display_name}
-              platform={current.me.platform}
-              userSlug={current.me.user_slug}
+              name={match.me.display_name}
+              platform={match.me.platform}
+              userSlug={match.me.user_slug}
               meta="Ты"
             />
           {/if}
         </div>
         <div class="flex flex-col justify-center gap-2">
           {#each moves as move (move)}
-            {@const isPicked = picked === move}
-            {@const dimOthers = picked !== null && !isPicked}
+            {@const locked = !interactive || myPick !== null || submitting || closed}
+            {@const isPicked = myPick === move}
             <button
               class={cn(
                 'rounded-2xl border-2 p-1.5 transition-all',
                 isPicked
                   ? 'scale-105 border-green-500 bg-green-500/15 shadow-lg shadow-green-500/30'
-                  : 'border-transparent hover:scale-110 hover:border-primary/50 active:scale-95',
-                (dimOthers || submitting) && 'opacity-30 grayscale',
+                  : 'border-transparent',
+                !locked && 'cursor-pointer hover:scale-110 hover:border-primary/50 active:scale-95',
+                locked && 'cursor-default',
+                locked && !isPicked && 'opacity-40 grayscale',
               )}
-              disabled={picked !== null || submitting || closed}
+              disabled={locked}
               onclick={() => pick(move)}
               title={move}
             >
@@ -132,24 +143,42 @@
           {/each}
         </div>
 
-        <!-- Center: timer / state -->
+        <!-- Center: timer / state / result -->
         <div class="flex w-20 shrink-0 flex-col items-center justify-center gap-1 text-center">
-          {#if picked}
-            <span class="text-xs text-muted-foreground">Ждём соперника…</span>
-          {:else if closed}
-            <span class="text-sm font-bold text-red-500">Время вышло</span>
+          {#if interactive}
+            {#if myPick}
+              <span class="text-xs text-muted-foreground">Ждём соперника…</span>
+            {:else if closed}
+              <span class="text-sm font-bold text-red-500">Время вышло</span>
+            {:else}
+              <span class="text-xs tracking-widest text-muted-foreground uppercase">Ходи</span>
+              <Countdown deadline_at={match.deadline_at} />
+            {/if}
           {:else}
-            <span class="text-xs tracking-widest text-muted-foreground uppercase">Ходи</span>
-            <Countdown deadline_at={current.deadline_at} />
+            <span
+              class="text-sm font-bold {match.is_draw
+                ? 'text-amber-300'
+                : match.i_won
+                  ? 'text-green-400'
+                  : 'text-red-400'}"
+            >
+              {match.is_draw ? 'Ничья' : match.i_won ? 'Победа' : 'Поражение'}
+            </span>
           {/if}
         </div>
 
-        <!-- Opponent side: mirrored — muted icons left of info; their pick is
-             revealed in history once the match resolves -->
+        <!-- Opponent side: mirrored — muted icons left of info, pick lights
+             up once the match resolves -->
         <div class="flex flex-col justify-center gap-2">
           {#each moves as move (move)}
+            {@const isOppPick = oppPick === move}
             <div
-              class="rounded-2xl border-2 border-transparent p-1.5 opacity-30 grayscale"
+              class={cn(
+                'rounded-2xl border-2 p-1.5',
+                isOppPick
+                  ? 'scale-105 border-amber-400 bg-amber-400/15 shadow-lg shadow-amber-400/30'
+                  : 'border-transparent opacity-30 grayscale',
+              )}
               title={move}
             >
               <img
@@ -168,6 +197,13 @@
               userSlug={opp.is_bot ? undefined : opp.user_slug}
               meta={opp.is_bot ? 'бот' : `${opp.wins} побед`}
             />
+          {/if}
+          {#if interactive && current}
+            {#if current.opp_moved}
+              <span class="text-xs font-bold text-green-400">Ход сделан ✓</span>
+            {:else}
+              <span class="animate-pulse text-xs text-muted-foreground">Ждёт ход…</span>
+            {/if}
           {/if}
         </div>
       </div>
@@ -196,6 +232,8 @@
               is_draw: h.is_draw,
               move_a: h.my_move,
               move_b: h.opp_move,
+              move_a_set: h.my_move !== undefined,
+              move_b_set: h.opp_move !== undefined,
               deadline_at: h.deadline_at,
               a: h.me,
               b: h.opp,
