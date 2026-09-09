@@ -551,6 +551,9 @@ export class MainScene extends Phaser.Scene {
     // back-to-front for correct 2.5D overlap (far rows first)
     const sorted = [...this.layout.cells].sort((a, b) => a.r - b.r || a.q - b.q)
     const s = this.layout.hexSize
+    // tiny visual inset so adjacent hexes don't touch edge-to-edge —
+    // layout spacing stays the same, only the drawn shape shrinks slightly
+    const rs = Math.max(1, s - 3)
 
     for (const cell of sorted) {
       const { x, y } = cellPixel(this.layout, cell)
@@ -561,8 +564,8 @@ export class MainScene extends Phaser.Scene {
       const occupant =
         cellIdx >= 0 && cellIdx < this.players.length ? this.players[cellIdx] : undefined
       const platform = occupant?.platform
-      const top = hexCornersTop2_5D(x, y, s)
-      const walls = hexSideWalls(x, y, s)
+      const top = hexCornersTop2_5D(x, y, rs)
+      const walls = hexSideWalls(x, y, rs)
       const depthShade = Phaser.Math.Clamp(
         0.55 + (cell.r / Math.max(1, this.layout!.rows - 1)) * 0.45,
         0.55,
@@ -618,9 +621,9 @@ export class MainScene extends Phaser.Scene {
         const cx = top.reduce((s, p) => s + p.x, 0) / top.length
         const cy = top.reduce((s, p) => s + p.y, 0) / top.length
         g.fillStyle(0x0d0a08, 1)
-        g.fillCircle(cx, cy + s * 0.06, s * 0.38)
+        g.fillCircle(cx, cy + rs * 0.06, rs * 0.38)
         g.fillStyle(0x2a1a0f, 0.85)
-        g.fillCircle(cx + s * 0.12, cy - s * 0.08, s * 0.14)
+        g.fillCircle(cx + rs * 0.12, cy - rs * 0.08, rs * 0.14)
         continue
       }
       const { fill: topColor, stroke: topStroke } = platformTopColor(platform, depthShade)
