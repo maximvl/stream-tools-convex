@@ -35,6 +35,38 @@ export const check = mutation({
     }
     const cacheKey = cacheKeyFor(platform, user_slug, session_id)
     const now = Date.now()
+    // One shared code per browser session: reuse any still-valid key minted
+    // for this session so the user copies a single code for all channels.
+    const sessionRows = await ctx.db
+      .query('auth_keys')
+      .withIndex('by_session', (q) => q.eq('session_id', session_id))
+      .collect()
+    const shared = sessionRows.find((r) => r.expires_at > now)
+    if (shared) {
+      const existing = await ctx.db
+        .query('auth_keys')
+        .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
+        .unique()
+      if (existing) {
+        if (existing.auth_key !== shared.auth_key) {
+          await ctx.db.patch(existing._id, {
+            auth_key: shared.auth_key,
+            expires_at: shared.expires_at,
+          })
+        }
+      } else {
+        await ctx.db.insert('auth_keys', {
+          cache_key: cacheKey,
+          user_slug,
+          platform,
+          session_id,
+          auth_key: shared.auth_key,
+          created_at: shared.created_at,
+          expires_at: shared.expires_at,
+        })
+      }
+      return { authenticated: false as const, auth_key: shared.auth_key, session_id }
+    }
     const existing = await ctx.db
       .query('auth_keys')
       .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
@@ -78,16 +110,22 @@ export const isAuthenticated = query({
 export const confirm = action({
   args: { stream_channel: v.string(), session_id: v.string() },
   handler: async (ctx, args): Promise<{ authenticated: boolean }> => {
-    let keyRow: { auth_key: string } | null
+    let keys: string[] = []
     try {
-      keyRow = await ctx.runQuery(internal.authLib.getKey, {
-        stream_channel: args.stream_channel,
-        session_id: args.session_id,
-      })
+      const [keyRow, sessionKeys] = await Promise.all([
+        ctx.runQuery(internal.authLib.getKey, {
+          stream_channel: args.stream_channel,
+          session_id: args.session_id,
+        }),
+        ctx.runQuery(internal.authLib.getSessionKeys, {
+          session_id: args.session_id,
+        }),
+      ])
+      keys = [...new Set([...(keyRow ? [keyRow.auth_key] : []), ...sessionKeys])]
     } catch {
       return { authenticated: false }
     }
-    if (!keyRow) return { authenticated: false }
+    if (keys.length === 0) return { authenticated: false }
     let server: string
     let channel: string
     try {
@@ -107,7 +145,7 @@ export const confirm = action({
     const verified = (data.messages ?? []).some(
       (m) =>
         m.user.displayName.toLowerCase() === channel.toLowerCase() &&
-        m.text.includes(keyRow.auth_key),
+        keys.some((k) => m.text.includes(k)),
     )
     if (!verified) return { authenticated: false }
     await ctx.runMutation(internal.authLib.upsertSession, {

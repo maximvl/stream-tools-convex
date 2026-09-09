@@ -53,7 +53,9 @@ export default defineSchema({
     created_at: v.number(),
     expires_at: v.number(),
     stream_channel: v.optional(v.string()),
-  }).index('by_cache_key', ['cache_key']),
+  })
+    .index('by_cache_key', ['cache_key'])
+    .index('by_session', ['session_id']),
 
   frontend_logs: defineTable({
     stream_channel: v.string(),

@@ -101,6 +101,21 @@ export const getKey = internalQuery({
   },
 })
 
+// All still-valid auth keys for one browser session. Channels share a
+// single code (see `api.auth.check`), but confirm accepts any of them so
+// pre-unification rows and races still verify.
+export const getSessionKeys = internalQuery({
+  args: { session_id: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query('auth_keys')
+      .withIndex('by_session', (q) => q.eq('session_id', args.session_id))
+      .collect()
+    const now = Date.now()
+    return rows.filter((r) => r.expires_at > now).map((r) => r.auth_key)
+  },
+})
+
 export const upsertSession = internalMutation({
   args: {
     stream_channel: v.string(),
