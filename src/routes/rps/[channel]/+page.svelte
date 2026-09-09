@@ -30,7 +30,10 @@
   const data = $derived(tournament.data ?? null)
   const tournamentId = $derived(data?.id as TournamentId | undefined)
   const isOwner = $derived(
-    data !== null && (owned.data ?? []).some((c) => c.stream_channel === data.owner_stream_channel),
+    data !== null &&
+      (owned.data ?? []).some(
+        (c: { stream_channel: string }) => c.stream_channel === data.owner_stream_channel,
+      ),
   )
 </script>
 

@@ -89,13 +89,21 @@ export async function createLotoWinners(params: {
     winners: params.winners,
   })
   return {
-    winners: res.winners.map((w) => ({
-      id: w.id,
-      username: w.username,
-      super_game_status: w.super_game_status,
-      created_at: w.created_at,
-      stream_channel: w.stream_channel,
-    })),
+    winners: res.winners.map(
+      (w: {
+        id: string
+        username: string
+        super_game_status: SuperGameStatus
+        created_at: number
+        stream_channel: string
+      }) => ({
+        id: w.id,
+        username: w.username,
+        super_game_status: w.super_game_status,
+        created_at: w.created_at,
+        stream_channel: w.stream_channel,
+      }),
+    ),
   }
 }
 

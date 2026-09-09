@@ -13,10 +13,6 @@ function makeId(len: number): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('')
 }
 
-function nowSec(): number {
-  return Math.floor(Date.now() / 1000)
-}
-
 // GET /api/auth_check?stream_channel=  (Handlers.fs:12-32)
 // Single round trip: verifies the session AND get-or-creates the auth key.
 // A mutation (not a query) because creating the key is a write.
@@ -135,7 +131,8 @@ export const confirm = action({
     } catch {
       return { authenticated: false }
     }
-    const tsFrom = nowSec() - 5 * 60
+    // Eventlab expects tsFrom in milliseconds.
+    const tsFrom = Date.now() - 5 * 60 * 1000
     const params = new URLSearchParams({ server, channel, tsFrom: String(tsFrom) })
     const res = await fetch(`https://chats.eventlab.dev/api/chat_messages?${params.toString()}`)
     if (!res.ok) return { authenticated: false }

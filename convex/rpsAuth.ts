@@ -65,7 +65,8 @@ export const confirm = action({
     })
     if (!code) return { authenticated: false as const, proofs: [] }
     if (code.expires_at <= Date.now()) return { authenticated: false as const, proofs: code.proofs }
-    const tsFrom = Math.floor(Date.now() / 1000) - 5 * 60
+    // Eventlab expects tsFrom in milliseconds.
+    const tsFrom = Date.now() - 5 * 60 * 1000
     // Fire all chat fetches together — one slow/failed channel must not hold
     // up the rest.
     const scanChannel = async (ownerChannel: string): Promise<Proof[]> => {
@@ -105,8 +106,12 @@ export const confirm = action({
       }
       return sightings
     }
-    const settled = await Promise.allSettled(code.stream_channels.map(scanChannel))
-    const found: Proof[] = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    const settled: PromiseSettledResult<Proof[]>[] = await Promise.allSettled(
+      code.stream_channels.map(scanChannel),
+    )
+    const found: Proof[] = settled.flatMap((r: PromiseSettledResult<Proof[]>) =>
+      r.status === 'fulfilled' ? r.value : [],
+    )
     // One user_auth row per distinct author identity, all sharing the
     // viewer's session (reuses the streamer auth storage verbatim).
     const seenIdentity = new Set<string>()
