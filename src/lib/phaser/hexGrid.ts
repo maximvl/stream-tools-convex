@@ -100,8 +100,8 @@ export type GridLayout = {
   totalHeight: number
 }
 
-export const MIN_HEX_SIZE = 14
-export const MAX_HEX_SIZE = 64
+export const MIN_HEX_SIZE = 26
+export const MAX_HEX_SIZE = 160
 export const GRID_PADDING = 16
 
 /** Compute size that fits cols*rows into w x h — accounts for 2.5D vertical compression */

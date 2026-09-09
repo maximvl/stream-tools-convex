@@ -418,11 +418,12 @@ export class MainScene extends Phaser.Scene {
     if (remaining <= 1) return 0
     const remainingTurns = this.TOTAL_TURNS - this.currentTurn
     if (remainingTurns <= 1) return remaining - 1
-    // progressive elimination: early turns remove more, later turns fewer
-    // weighted share — weight of next turn = remainingTurns, total weight = 1+2+...+remainingTurns
-    // e.g. 50 players → 13,11,9,7,5,3,1  (vs flat 7 each) — keeps ~5 before finale
-    const totalWeight = (remainingTurns * (remainingTurns + 1)) / 2
-    const weightNext = remainingTurns
+    // progressive elimination: early turns remove a lot more, later turns taper off
+    // squared weights — weight of next turn = remainingTurns^2, total = 1^2+2^2+...+n^2
+    // e.g. 50 players → 18,13,9,5,3,1,0 (vs linear 13,11,9,7,5,3,1) — heavier opener, gentler finale
+    const n = remainingTurns
+    const totalWeight = (n * (n + 1) * (2 * n + 1)) / 6
+    const weightNext = n * n
     const toElim = Math.ceil(((remaining - 1) * weightNext) / totalWeight)
     return Math.max(1, Math.min(toElim, remaining - 1))
   }
@@ -675,7 +676,7 @@ export class MainScene extends Phaser.Scene {
       container.setData('isAlive', isAlive)
       container.setData('isShielded', isShielded)
 
-      const radius = Phaser.Math.Clamp(size * 0.24, 7, 12)
+      const radius = Phaser.Math.Clamp(size * 0.26, 12, 34)
       const lift = size * PERSPECTIVE_Y_SCALE * 0.35 + size * EXTRUSION_FACTOR * 0.5
       const iconY = -lift - Math.max(2, size * 0.08) - 2
 
@@ -750,8 +751,8 @@ export class MainScene extends Phaser.Scene {
         }
       }
 
-      const nameY = isAlive ? iconY + Phaser.Math.Clamp(size * 0.24, 7, 12) + 8 : 2
-      const nameFontSize = Phaser.Math.Clamp(Math.round(size * 0.34), 10, 15)
+      const nameY = isAlive ? iconY + radius + 8 : 2
+      const nameFontSize = Phaser.Math.Clamp(Math.round(size * 0.36), 14, 36)
       const bgPadX = 4
       const bgPadY = 1
       const nameColor = isAlive ? '#ffffff' : '#9aa0a6'
@@ -768,7 +769,7 @@ export class MainScene extends Phaser.Scene {
         } as Phaser.Types.GameObjects.Text.TextStyle)
         .setOrigin(0.5)
       nameText.setAlpha(isAlive ? 1 : 0.72)
-      const textW = Math.min(nameText.width + bgPadX * 2, size * 1.75)
+      const textW = Math.min(nameText.width + bgPadX * 2, size * 2.2)
       const textH = nameText.height + bgPadY * 2
       const bg = this.add.graphics()
       bg.setData('isNameBg', true)
@@ -1043,8 +1044,9 @@ export class MainScene extends Phaser.Scene {
       this.events.emit('firingEnd')
       return
     }
-    // safety fallback: ensure firing resets even if a tween is lost
-    const failsafe = this.time.delayedCall(4500, () => {
+    // safety fallback: scale with victim count since early rounds now eliminate many
+    // last fireball launches at (n-1)*140ms + ~660ms fall time + 520ms wrap-up
+    const failsafe = this.time.delayedCall(victims.length * 140 + 3000, () => {
       if (this.isFiring) {
         this.isFiring = false
         this.events.emit('fireEnd', { turn: this.currentTurn })
@@ -1063,9 +1065,8 @@ export class MainScene extends Phaser.Scene {
       if (this.shieldedIds.has(victim.id)) {
         this.shieldedIds.delete(victim.id)
         const container = this.tokenByPlayerId.get(victim.id)
-        // shield break VFX — blue burst + flash
+        // shield break VFX — blue burst (no screen flash to avoid strobing with many players)
         this.cameras.main.shake(90, 0.004)
-        this.cameras.main.flash(90, 100, 160, 255)
         const sRing = this.add.circle(pos.x, pos.y - 6, 12, 0x60a5fa, 0.85).setDepth(pos.y + 30)
         this.tweens.add({
           targets: sRing,
@@ -1340,8 +1341,6 @@ export class MainScene extends Phaser.Scene {
         delay,
         ease: 'Quad.In',
         onComplete: () => {
-          // impact flash
-          this.cameras.main.flash(70, 255, 140, 40)
           fireContainer.destroy(true)
           onVictimImpact(victim)
         },
