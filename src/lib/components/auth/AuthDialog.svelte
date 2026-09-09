@@ -96,16 +96,12 @@
             {#each unauthedKeys as key (key)}
               {@const conn = info(key)}
               {#if conn.server}
-                <span
-                  class="rounded-full bg-red-500/20 p-1 shadow-[0_0_8px_rgba(239,68,68,0.7)] ring-2 ring-red-500"
-                >
-                  <ServerIcon
-                    server={conn.server}
-                    channel={conn.channel}
-                    status="connected"
-                    class="h-5 w-5"
-                  />
-                </span>
+                <ServerIcon
+                  server={conn.server}
+                  channel={conn.channel}
+                  status="connected"
+                  class="auth-unauthed-icon h-5 w-5"
+                />
               {/if}
             {/each}
             <span class="text-wrap wrap-break-word">
@@ -208,3 +204,12 @@
     </div>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  /* Class lands on the <img> inside ServerIcon (child component),
+     so it must be global to apply. */
+  :global(.auth-unauthed-icon) {
+    filter: sepia(1) saturate(5) hue-rotate(-50deg) brightness(0.95)
+      drop-shadow(0 0 5px rgba(239, 68, 68, 0.9));
+  }
+</style>
