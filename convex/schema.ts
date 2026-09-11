@@ -143,6 +143,10 @@ export default defineSchema({
     channels: v.array(v.string()),
     last_seen_ts: v.number(),
     created_at: v.number(),
+    // Source of truth for rolled numbers (browser picks, backend stores).
+    drawn_numbers: v.array(v.string()),
+    // Set by the frontend winner watcher; the polling worker stops while set.
+    winner_ticket_id: v.optional(v.id('loto_tickets')),
   }).index('by_session', ['owner_session_id']),
 
   // Temporary tickets for the active game. Evicted by cron after 24h.

@@ -8,7 +8,7 @@ const CHAT_API = 'https://chats.eventlab.dev/api'
 // const URL_PREFIX = 'http://localhost:8088/v2'
 
 // const MOCK_API = import.meta.env.MODE === 'development' && !URL_PREFIX.includes('127.0.0.1')
-const MOCK_API = dev
+const MOCK_API = dev && false
 
 console.log('MOCK_API', MOCK_API)
 

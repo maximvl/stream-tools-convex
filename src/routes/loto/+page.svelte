@@ -27,7 +27,8 @@
     createLotoGame,
     setLotoChannels,
     removeLotoTicket,
-    syncLotoGame,
+    pushDrawnNumber,
+    setLotoWinner,
   } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
@@ -35,6 +36,7 @@
 
   import BgPattern5 from '$lib/components/common/BgPattern5.svelte'
   import LotoTicketsSync from '$lib/components/loto/LotoTicketsSync.svelte'
+  import LotoGameSync from '$lib/components/loto/LotoGameSync.svelte'
   import { NumberToFancyName } from '$lib/components/loto/utils'
   import TicketPanel from '$lib/components/loto/TicketPanel.svelte'
   import { AuthStore } from '$lib/stores/authStore.svelte'
@@ -58,16 +60,34 @@
   lotoStore.ticketRemover = (ticketId: string) => {
     removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
   }
+  lotoStore.drawPusher = (number: string) => {
+    if (!lotoStore.gameId) return
+    pushDrawnNumber(convex, lotoStore.gameId as Id<'loto_games'>, number).catch(() => {})
+  }
+  lotoStore.winnerReporter = (ticketId: string | null) => {
+    if (!lotoStore.gameId) return
+    setLotoWinner(
+      convex,
+      lotoStore.gameId as Id<'loto_games'>,
+      ticketId as Id<'loto_tickets'> | null,
+    ).catch(() => {})
+  }
 
   // Stream channels for the game, from connected chats (lowercased match backend).
   const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
+
+  // Poll params travel with the worker chain (no stored snapshot).
+  const pollParams = () => ({
+    ticket_size: lotoConfig.value.ticket_size,
+    max_number: lotoConfig.value.max_number,
+  })
 
   async function ensureGame() {
     if (!getSessionId()) return
     if (gameChannels.length === 0) return
     try {
       if (!lotoStore.gameId) {
-        const res = await createLotoGame(convex, gameChannels)
+        const res = await createLotoGame(convex, gameChannels, pollParams())
         gameIdStore.value = res.game_id as string
         lotoStore.setGameId(res.game_id as string)
       } else {
@@ -90,7 +110,7 @@
   async function newBackendGame() {
     if (gameChannels.length === 0) return
     try {
-      const res = await createLotoGame(convex, gameChannels)
+      const res = await createLotoGame(convex, gameChannels, pollParams())
       gameIdStore.value = res.game_id as string
       lotoStore.setGameId(res.game_id as string)
       lotoStore.newGame()
@@ -99,36 +119,10 @@
     }
   }
 
-  // Live tickets for the active game instance (subscription mounts only
-  // once a game exists — this convex-svelte version has no 'skip').
-  // See LotoTicketsSync.svelte.
-  // Backend chat poller trigger: `sync` is an action with side effects
-  // (external chat fetch + writes), so Convex can't auto-run it — it needs
-  // a plain 2s timer. Ticket display is owned solely by the list
-  // subscription (LotoTicketsSync): the action's writes propagate through
-  // it automatically, so the return value is intentionally ignored here.
-  // Writing it into the store as well would mean two writers racing
-  // (double renders, slow ticks overwriting fresher subscription data).
-  $effect(() => {
-    const gameId = lotoStore.gameId
-    if (!gameId) return
-    const tick = async () => {
-      try {
-        await syncLotoGame(convex, gameId as Id<'loto_games'>, {
-          ticket_size: lotoConfig.value.ticket_size,
-          max_number: lotoConfig.value.max_number,
-        })
-      } catch {
-        // Transient failure — next tick retries. Display subscription
-        // keeps showing the last known tickets meanwhile.
-      }
-    }
-    void tick()
-    const intervalId = setInterval(tick, 2000)
-    return () => {
-      clearInterval(intervalId)
-    }
-  })
+  // Live backend state for the active game instance (subscriptions mount
+  // only once a game exists — this convex-svelte version has no 'skip').
+  // Ticket polling runs in the backend worker started by createGame, so
+  // there is no frontend timer here at all.
 
   $effect(() => {
     untrack(() => {
@@ -213,6 +207,7 @@
 </div>
 {#if lotoStore.gameId}
   <LotoTicketsSync gameId={lotoStore.gameId} />
+  <LotoGameSync gameId={lotoStore.gameId} />
 {/if}
 <div class="dark relative flex min-h-screen flex-col overflow-hidden p-6">
   <div class="fixed top-6 left-6 z-10 flex flex-col gap-4">

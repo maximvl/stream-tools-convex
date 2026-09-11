@@ -2,6 +2,10 @@ import type { Doc } from './_generated/dataModel'
 import { internalMutation, internalQuery } from './_generated/server'
 import { v } from 'convex/values'
 
+// Tickets/games older than this are evicted by cron; the polling worker
+// also stops past this age so abandoned games can't poll forever.
+export const LOTO_TTL_MS = 24 * 60 * 60 * 1000
+
 export type FrontendTicket = {
   id: string
   owner_id: string

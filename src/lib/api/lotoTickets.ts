@@ -18,10 +18,13 @@ function requireSession(): string {
 export async function createLotoGame(
   client: ConvexClient,
   channels: string[],
+  opts?: { ticket_size?: number; max_number?: number },
 ): Promise<{ game_id: LotoGameId }> {
   return await client.mutation(api.loto.createGame, {
     session_id: requireSession(),
     channels,
+    ticket_size: opts?.ticket_size,
+    max_number: opts?.max_number,
   })
 }
 
@@ -47,29 +50,26 @@ export async function removeLotoTicket(
   })
 }
 
-// Timer only: all chat I/O happens inside the Convex action via chatService.
-export type SyncedTicket = {
-  id: string
-  owner_id: string
-  owner_name: string
-  value: string[]
-  color: string
-  variant: number
-  type: 'chat' | 'points'
-  source: { server: string; channel: string }
-  created_at: number
-  isLatecomer: boolean
-}
-
-export async function syncLotoGame(
+export async function pushDrawnNumber(
   client: ConvexClient,
   game_id: LotoGameId,
-  opts?: { ticket_size?: number; max_number?: number },
-): Promise<{ tickets: SyncedTicket[]; synced: number }> {
-  return await client.action(api.loto.sync, {
+  number: string,
+): Promise<{ ignored: boolean; drawn_numbers: string[] }> {
+  return await client.mutation(api.loto.pushDrawnNumber, {
     game_id,
     session_id: requireSession(),
-    ticket_size: opts?.ticket_size,
-    max_number: opts?.max_number,
+    number,
+  })
+}
+
+export async function setLotoWinner(
+  client: ConvexClient,
+  game_id: LotoGameId,
+  ticket_id: LotoTicketId | null,
+): Promise<{ winner_ticket_id?: LotoTicketId }> {
+  return await client.mutation(api.loto.setWinner, {
+    game_id,
+    session_id: requireSession(),
+    ticket_id: ticket_id ?? undefined,
   })
 }

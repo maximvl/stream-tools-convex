@@ -78,13 +78,23 @@ export class LotoStore {
   // Backend tickets for the active game (gameId = instance id). The list
   // query in +page.svelte writes here via setRemoteTickets; all derived
   // views (ordering, winner) read from it. Local generation was removed —
-  // tickets are created by the backend sync action polling chats itself.
+  // tickets are created by the backend polling worker started at game creation.
   remoteTickets = $state<LotoTicket[]>([])
   gameId = $state<string | null>(null)
 
   // Set by the page (has Convex client + session): backend delete call.
   // Store still removes locally first for instant UI feedback.
   ticketRemover: ((ticketId: string) => void) | null = null
+
+  // Set by the page: persists a rolled number to the backend game.
+  // Rolls for a game with a winner set are ignored server-side.
+  drawPusher: ((number: string) => void) | null = null
+
+  // Set by the page: reports the derived winner to the backend game
+  // (null clears, e.g. after the winning ticket is deleted). The polling
+  // worker stops while a winner is set.
+  winnerReporter: ((ticketId: string | null) => void) | null = null
+  private lastReportedWinnerId: string | null | undefined = undefined
 
   superGameValues = $state<SuperGameReward[]>([])
   superGameGuesses = $state<number[]>([])
@@ -177,9 +187,21 @@ export class LotoStore {
 
   constructor(config: LocalStore<LotoConfig>) {
     this.config = config
-    this.drawPool = Array.from({ length: this.config.value.max_number }, (_, i) =>
-      (i + 1).toString().padStart(2, '0'),
-    )
+    this.drawPool = this.fullDrawPool()
+
+    $effect(() => {
+      // Report derived winner changes to the backend exactly once per id.
+      // Skipped while tickets haven't loaded yet: on reload the derived
+      // winner is briefly null and must not clear a stored backend winner.
+      if (this.remoteTickets.length === 0) return
+      const winnerId = this.winner?.id ?? null
+      if (winnerId !== this.lastReportedWinnerId) {
+        this.lastReportedWinnerId = winnerId
+        untrack(() => {
+          this.winnerReporter?.(winnerId)
+        })
+      }
+    })
 
     $effect(() => {
       void this.winner
@@ -232,6 +254,20 @@ export class LotoStore {
 
   setGameId(gameId: string | null) {
     this.gameId = gameId
+  }
+
+  private fullDrawPool(): string[] {
+    return Array.from({ length: this.config.value.max_number }, (_, i) =>
+      (i + 1).toString().padStart(2, '0'),
+    )
+  }
+
+  // Backend game subscription writes here. Draw pool is recomputed so a
+  // reload or second tab converges to the same state.
+  setDrawnNumbers(numbers: string[]) {
+    this.drawnNumbers = [...numbers]
+    const drawn = new SvelteSet(numbers)
+    this.drawPool = this.fullDrawPool().filter((n) => !drawn.has(n))
   }
 
   setRemoteTickets(tickets: LotoTicket[]) {
@@ -388,17 +424,21 @@ export class LotoStore {
     // the page wires this up — store just resets local round state.
     this.gameState = 'registration'
     this.drawnNumbers = []
-    this.drawPool = Array.from({ length: this.config.value.max_number }, (_, i) =>
-      (i + 1).toString().padStart(2, '0'),
-    )
+    this.drawPool = this.fullDrawPool()
     this.remoteTickets = []
     this.openedChats = new SvelteSet()
+    this.lastReportedWinnerId = null
   }
 
   deleteTicket = (ticketId: LotoTicketId) => {
     this.openedChats.delete(ticketId)
     this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
     this.ticketRemover?.(ticketId as string)
+    // Deleting the reported winner clears the backend field so polling resumes.
+    if (ticketId === this.lastReportedWinnerId) {
+      this.lastReportedWinnerId = null
+      this.winnerReporter?.(null)
+    }
   }
 
   rollNextNumber = async () => {
@@ -417,6 +457,9 @@ export class LotoStore {
     this.nextNumber = rolledNumber
     this.drawnNumbers.push(rolledNumber)
     this.drawPool = this.drawPool.filter((_, i) => i !== randomIndex)
+    // Persist to backend (source of truth for all tabs); the game
+    // subscription echoes it back. Ignored server-side once a winner is set.
+    this.drawPusher?.(rolledNumber)
   }
 }
 

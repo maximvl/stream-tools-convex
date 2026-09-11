@@ -1,4 +1,5 @@
 import { internalMutation } from './_generated/server'
+import { LOTO_TTL_MS } from './lotoLib'
 
 // Replaces the hourly Timer in Program.fs:11-16 + Cache.fs:33-36
 export const evictExpiredAuthKeys = internalMutation({
@@ -13,10 +14,9 @@ export const evictExpiredAuthKeys = internalMutation({
   },
 })
 
-const LOTO_TTL_MS = 24 * 60 * 60 * 1000
-
-// Loto tickets are temporary: drop tickets older than 24h, then drop games
-// older than 24h (with any remaining tickets) so a new game never sees them.
+// Loto tickets are temporary: drop tickets older than the TTL, then drop
+// games older than the TTL (with any remaining tickets) so a new game
+// never sees them.
 export const evictExpiredLotoTickets = internalMutation({
   args: {},
   handler: async (ctx) => {
