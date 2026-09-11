@@ -269,7 +269,7 @@
     <div class="absolute top-30 right-20 w-fit">
       {#if lotoStore.streamerTickets.length === 0}
         <Button
-          class="h-auto rounded-xl bg-cyan-600 px-6 py-4 text-xl font-black tracking-tighter text-white uppercase shadow-lg transition-all hover:scale-105 hover:bg-cyan-500 active:scale-95 disabled:opacity-50"
+          class="rounded-xl border border-cyan-800 bg-cyan-950 px-4 py-2 text-base font-medium text-cyan-200 transition-colors hover:bg-cyan-900 disabled:opacity-50"
           onclick={() => addStreamer()}
           disabled={addingStreamer}
         >
