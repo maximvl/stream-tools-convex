@@ -2,6 +2,7 @@ import { query, mutation, action } from './_generated/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import { parseIdentity, cacheKeyFor } from './userIdentity'
+import { fetchChatMessages } from './chatService'
 
 const SESSION_LEN = 15
 const AUTH_KEY_LEN = 5
@@ -133,13 +134,8 @@ export const confirm = action({
     }
     // Eventlab expects tsFrom in milliseconds.
     const tsFrom = Date.now() - 5 * 60 * 1000
-    const params = new URLSearchParams({ server, channel, tsFrom: String(tsFrom) })
-    const res = await fetch(`https://chats.eventlab.dev/api/chat_messages?${params.toString()}`)
-    if (!res.ok) return { authenticated: false }
-    const data = (await res.json()) as {
-      messages: { text: string; user: { displayName: string } }[] | null
-    }
-    const verified = (data.messages ?? []).some(
+    const messages = await fetchChatMessages({ server, channel, tsFrom })
+    const verified = messages.some(
       (m) =>
         m.user.displayName.toLowerCase() === channel.toLowerCase() &&
         keys.some((k) => m.text.includes(k)),

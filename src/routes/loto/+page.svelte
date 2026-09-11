@@ -19,11 +19,22 @@
   import SuperGame from '$lib/components/loto/supergame/SuperGame.svelte'
   import LotoWinners from '$lib/components/loto/LotoWinners.svelte'
   import { createQueries } from '@tanstack/svelte-query'
+  import { useConvexClient } from 'convex-svelte'
+  import type { Id } from '../../../convex/_generated/dataModel.js'
+  import { getSessionId } from '$lib/session'
+  import { LocalStore } from '$lib/stores/localStore.svelte'
+  import {
+    createLotoGame,
+    setLotoChannels,
+    removeLotoTicket,
+    syncLotoGame,
+  } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
   import { BackgroundImages } from '$lib/constants'
 
   import BgPattern5 from '$lib/components/common/BgPattern5.svelte'
+  import LotoTicketsSync from '$lib/components/loto/LotoTicketsSync.svelte'
   import { NumberToFancyName } from '$lib/components/loto/utils'
   import TicketPanel from '$lib/components/loto/TicketPanel.svelte'
   import { AuthStore } from '$lib/stores/authStore.svelte'
@@ -37,6 +48,87 @@
 
   const authStore = new AuthStore()
   lotoStore.setAuthStore(authStore)
+
+  // ---- Backend loto game (instance id) ----
+  const convex = useConvexClient()
+  const gameIdStore = new LocalStore<string | null>('loto-game-id', null)
+  if (gameIdStore.value) {
+    lotoStore.setGameId(gameIdStore.value)
+  }
+  lotoStore.ticketRemover = (ticketId: string) => {
+    removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
+  }
+
+  // Stream channels for the game, from connected chats (lowercased match backend).
+  const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
+
+  async function ensureGame() {
+    if (!getSessionId()) return
+    if (gameChannels.length === 0) return
+    try {
+      if (!lotoStore.gameId) {
+        const res = await createLotoGame(convex, gameChannels)
+        gameIdStore.value = res.game_id as string
+        lotoStore.setGameId(res.game_id as string)
+      } else {
+        await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, gameChannels).catch(
+          () => undefined,
+        )
+      }
+    } catch {
+      // Backend unavailable — display polling still works, tickets just stay empty.
+    }
+  }
+
+  $effect(() => {
+    void gameChannels.length
+    untrack(() => {
+      void ensureGame()
+    })
+  })
+
+  async function newBackendGame() {
+    if (gameChannels.length === 0) return
+    try {
+      const res = await createLotoGame(convex, gameChannels)
+      gameIdStore.value = res.game_id as string
+      lotoStore.setGameId(res.game_id as string)
+      lotoStore.newGame()
+    } catch {
+      // ignore — stays on current game
+    }
+  }
+
+  // Live tickets for the active game instance (subscription mounts only
+  // once a game exists — this convex-svelte version has no 'skip').
+  // See LotoTicketsSync.svelte.
+  // Backend chat poller trigger: `sync` is an action with side effects
+  // (external chat fetch + writes), so Convex can't auto-run it — it needs
+  // a plain 2s timer. Ticket display is owned solely by the list
+  // subscription (LotoTicketsSync): the action's writes propagate through
+  // it automatically, so the return value is intentionally ignored here.
+  // Writing it into the store as well would mean two writers racing
+  // (double renders, slow ticks overwriting fresher subscription data).
+  $effect(() => {
+    const gameId = lotoStore.gameId
+    if (!gameId) return
+    const tick = async () => {
+      try {
+        await syncLotoGame(convex, gameId as Id<'loto_games'>, {
+          ticket_size: lotoConfig.value.ticket_size,
+          max_number: lotoConfig.value.max_number,
+        })
+      } catch {
+        // Transient failure — next tick retries. Display subscription
+        // keeps showing the last known tickets meanwhile.
+      }
+    }
+    void tick()
+    const intervalId = setInterval(tick, 2000)
+    return () => {
+      clearInterval(intervalId)
+    }
+  })
 
   $effect(() => {
     untrack(() => {
@@ -119,6 +211,9 @@
 <div class="dark flex flex-col items-center p-8">
   <Nav />
 </div>
+{#if lotoStore.gameId}
+  <LotoTicketsSync gameId={lotoStore.gameId} />
+{/if}
 <div class="dark relative flex min-h-screen flex-col overflow-hidden p-6">
   <div class="fixed top-6 left-6 z-10 flex flex-col gap-4">
     <ConnectionDialog />
@@ -198,6 +293,12 @@
             onclick={() => lotoStore.start()}
           >
             Начать
+          </Button>
+          <Button
+            class="h-auto rounded-xl bg-amber-600 px-6 py-6 text-xl font-black tracking-tighter uppercase shadow-xl transition-all hover:scale-105 hover:bg-amber-500 active:scale-95"
+            onclick={() => newBackendGame()}
+          >
+            Новая игра
           </Button>
           {#if countdownTimer.limitMs > 0}
             <div class="bg-card">

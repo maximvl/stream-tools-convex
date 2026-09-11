@@ -1,12 +1,4 @@
-import type {
-  ChatMessageWithSource,
-  ChatUser,
-  UserId,
-  VkMention,
-  VkRole,
-  VkRoleId,
-} from '$lib/types'
-import sampleSize from 'lodash/sampleSize'
+import type { ChatMessageWithSource, ChatUser, VkRole, VkRoleId } from '$lib/types'
 import uniq from 'lodash/uniq'
 import { SvelteMap, SvelteSet } from 'svelte/reactivity'
 import { LocalStore } from './localStore.svelte'
@@ -25,8 +17,6 @@ import type { ConnKey } from './chatMessagesStore.svelte'
 
 type GameState = 'registration' | 'playing'
 type SuperGameState = 'not_started' | 'in_progress' | 'finished'
-
-const LOTO_MATCH = 'лото'
 
 export type LotoConfig = {
   ticket_size: number
@@ -85,8 +75,16 @@ export class LotoStore {
   displayNextNumber = $state<string>('')
   isRolling = $state(false)
 
-  ticketsFromChat = $state<LotoTicket[]>([])
-  ticketsFromPoints = $state<LotoTicket[]>([])
+  // Backend tickets for the active game (gameId = instance id). The list
+  // query in +page.svelte writes here via setRemoteTickets; all derived
+  // views (ordering, winner) read from it. Local generation was removed —
+  // tickets are created by the backend sync action polling chats itself.
+  remoteTickets = $state<LotoTicket[]>([])
+  gameId = $state<string | null>(null)
+
+  // Set by the page (has Convex client + session): backend delete call.
+  // Store still removes locally first for instant UI feedback.
+  ticketRemover: ((ticketId: string) => void) | null = null
 
   superGameValues = $state<SuperGameReward[]>([])
   superGameGuesses = $state<number[]>([])
@@ -230,7 +228,25 @@ export class LotoStore {
 
   drawnNumbersSet = $derived(new SvelteSet(this.drawnNumbers))
 
-  allTickets = $derived([...this.ticketsFromChat, ...this.ticketsFromPoints])
+  allTickets = $derived(this.remoteTickets)
+
+  setGameId(gameId: string | null) {
+    this.gameId = gameId
+  }
+
+  setRemoteTickets(tickets: LotoTicket[]) {
+    this.remoteTickets = tickets
+    // Keep user cards working for backend tickets even before the author
+    // chats again (display polling only covers live messages).
+    for (const t of tickets) {
+      if (!this.usersById.has(t.owner_id)) {
+        this.usersById.set(t.owner_id, {
+          id: t.owner_id,
+          displayName: t.owner_name,
+        } as ChatUser)
+      }
+    }
+  }
 
   streamerTickets = $derived(
     this.allTickets.filter(
@@ -242,11 +258,7 @@ export class LotoStore {
   ticketsMatchData: Record<LotoTicketId, { score: number; maxSequentialMatch: number }> =
     $derived.by(() => {
       const result: Record<LotoTicketId, { score: number; maxSequentialMatch: number }> = {}
-      for (const ticket of this.ticketsFromChat) {
-        const match = getTicketMatch(ticket, this.drawnNumbersSet)
-        result[ticket.id] = match
-      }
-      for (const ticket of this.ticketsFromPoints) {
+      for (const ticket of this.remoteTickets) {
         const match = getTicketMatch(ticket, this.drawnNumbersSet)
         result[ticket.id] = match
       }
@@ -348,6 +360,11 @@ export class LotoStore {
   })
 
   handleMessage = (msg: ChatMessageWithSource) => {
+    // Track users for display cards even though tickets now come from backend.
+    if (!this.usersById.has(msg.user.id)) {
+      this.usersById.set(msg.user.id, { ...msg.user })
+    }
+
     if (this.winner && msg.user.id === this.winner.owner_id) {
       const numbers = parseSuperGameNumbers(msg.text, this.config.value)
       if (numbers.length > 0) {
@@ -360,66 +377,28 @@ export class LotoStore {
         return
       }
     }
-
-    if (this.winner) {
-      return
-    }
-
-    if (!msg.text.toLowerCase().includes(LOTO_MATCH)) {
-      return
-    }
-
-    if (this.gameState !== 'registration' && !this.config.value.allow_tickets_after_start) {
-      return
-    }
-
-    const ticket = makeTicket({ chatMessage: msg, pool: this.drawPool, config: this.config.value })
-    const user: ChatUser = {
-      ...msg.user,
-    }
-
-    if (isMessageFromVkBot(msg)) {
-      const mention = msg.vkFields?.mentions[0] as VkMention
-      if (mention) {
-        user.id = mention.id.toString() as UserId
-        user.displayName = mention.displayName
-        const existingUser = this.usersById.get(user.id)
-        if (!existingUser) {
-          user.vkFields = undefined
-          this.usersById.set(user.id, user)
-        }
-
-        this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.owner_id !== user.id)
-
-        ticket.type = 'points'
-        ticket.owner_id = user.id
-        ticket.owner_name = user.displayName
-        this.ticketsFromPoints.push(ticket)
-      }
-      return
-    }
-    if (isMessageHighlightedOnTwitch(msg)) {
-      this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.owner_id !== user.id)
-
-      ticket.type = 'points'
-      this.usersById.set(user.id, user)
-      this.ticketsFromPoints.push(ticket)
-      return
-    }
-    // regular ticket
-    this.ticketsFromChat = this.ticketsFromChat.filter((t) => t.owner_id !== user.id)
-    this.usersById.set(user.id, user)
-    this.ticketsFromChat.push(ticket)
   }
 
   start = () => {
     this.gameState = 'playing'
   }
 
+  newGame = () => {
+    // Backend game creation assigns a fresh gameId (instance isolation);
+    // the page wires this up — store just resets local round state.
+    this.gameState = 'registration'
+    this.drawnNumbers = []
+    this.drawPool = Array.from({ length: this.config.value.max_number }, (_, i) =>
+      (i + 1).toString().padStart(2, '0'),
+    )
+    this.remoteTickets = []
+    this.openedChats = new SvelteSet()
+  }
+
   deleteTicket = (ticketId: LotoTicketId) => {
     this.openedChats.delete(ticketId)
-    this.ticketsFromChat = this.ticketsFromChat.filter((t) => t.id !== ticketId)
-    this.ticketsFromPoints = this.ticketsFromPoints.filter((t) => t.id !== ticketId)
+    this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
+    this.ticketRemover?.(ticketId as string)
   }
 
   rollNextNumber = async () => {
@@ -470,68 +449,6 @@ function getTicketMatch(ticket: LotoTicket, drawnSet: SvelteSet<string>) {
     score: maxSeq * 1000 + totalMatches,
     maxSequentialMatch: maxSeq,
   }
-}
-
-function makeTicket(params: {
-  chatMessage: ChatMessageWithSource
-  pool: string[]
-  config: LotoConfig
-}): LotoTicket {
-  const { chatMessage, pool, config } = params
-
-  const ticketNumber = genTicketNumber({
-    text: chatMessage.text,
-    pool,
-    config,
-  })
-  return {
-    id: crypto.randomUUID() as LotoTicketId,
-    owner_id: chatMessage.user.id,
-    owner_name: chatMessage.user.displayName,
-    value: ticketNumber,
-    color: 'random',
-    variant: 1,
-    type: 'chat',
-    source: chatMessage.source,
-    created_at: chatMessage.timestampMs,
-    isLatecomer: false,
-  }
-}
-
-function genTicketNumber(params: { text: string; pool: string[]; config: LotoConfig }): string[] {
-  const { pool, config } = params
-
-  const text = params.text.trim()
-  if (text.length === 0) {
-    return sampleSize(pool, config.ticket_size)
-  }
-
-  const ticketNumber = uniq(
-    text
-      .split(' ')
-      .map((n) => parseInt(n))
-      .filter((n) => n >= 1 && n <= config.max_number)
-      .map((n) => n.toString().padStart(2, '0'))
-      .filter((n) => pool.includes(n)),
-  )
-
-  if (ticketNumber.length < config.ticket_size) {
-    const sampleOptions = sampleSize(pool, 10)
-    const validOptions = sampleOptions.filter((o) => !ticketNumber.includes(o))
-    ticketNumber.push(...sampleSize(validOptions, config.ticket_size - ticketNumber.length))
-  }
-
-  return ticketNumber.slice(0, config.ticket_size)
-}
-
-const VK_CHAT_BOT_NAME = 'ChatBot'
-
-function isMessageFromVkBot(msg: ChatMessageWithSource) {
-  return msg.source.server === 'vkvideo' && msg.user.displayName === VK_CHAT_BOT_NAME
-}
-
-function isMessageHighlightedOnTwitch(msg: ChatMessageWithSource) {
-  return msg.source.server === 'twitch' && Boolean(msg.user.twitchFields?.highlighted)
 }
 
 export function getLotoConfigStore() {

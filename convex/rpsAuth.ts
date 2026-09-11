@@ -2,6 +2,7 @@ import { action, mutation } from './_generated/server'
 import { v, type Infer } from 'convex/values'
 import { internal } from './_generated/api'
 import { parseIdentity, streamChannelFor } from './userIdentity'
+import { fetchChatMessagesBatch } from './chatService'
 import { proofValidator } from './rpsLib'
 
 type Proof = Infer<typeof proofValidator>
@@ -49,10 +50,6 @@ export const requestCode = mutation({
   },
 })
 
-type ChatMessagesResponse = {
-  messages: { text: string; user: { displayName: string } }[] | null
-}
-
 // Scans the tournament owner's chats for the viewer's code. Every sighting
 // becomes a proof (via-channel + author identity) and upserts the SAME
 // `user_auth` table streamers use — one session, many identities.
@@ -67,36 +64,24 @@ export const confirm = action({
     if (code.expires_at <= Date.now()) return { authenticated: false as const, proofs: code.proofs }
     // Eventlab expects tsFrom in milliseconds.
     const tsFrom = Date.now() - 5 * 60 * 1000
-    // Fire all chat fetches together — one slow/failed channel must not hold
-    // up the rest.
-    const scanChannel = async (ownerChannel: string): Promise<Proof[]> => {
+    // One batched fetch — one slow/failed channel must not hold up the rest.
+    const byChannel = await fetchChatMessagesBatch(code.stream_channels, tsFrom)
+    const found: Proof[] = []
+    for (const ownerChannel of code.stream_channels) {
       let platform: string
-      let channel: string
       try {
-        const identity = parseIdentity(ownerChannel)
-        platform = identity.platform
-        channel = identity.user_slug
+        platform = parseIdentity(ownerChannel).platform
       } catch {
-        return []
+        continue
       }
-      const params = new URLSearchParams({ server: platform, channel, tsFrom: String(tsFrom) })
-      let res: Response
-      try {
-        res = await fetch(`https://chats.eventlab.dev/api/chat_messages?${params.toString()}`)
-      } catch {
-        return []
-      }
-      if (!res.ok) return []
-      const data = (await res.json()) as ChatMessagesResponse
-      const sightings: Proof[] = []
-      for (const m of data.messages ?? []) {
+      for (const m of byChannel.get(ownerChannel) ?? []) {
         if (
           typeof m.text === 'string' &&
           m.text.includes(code.auth_key) &&
           typeof m.user?.displayName === 'string' &&
           m.user.displayName.length > 0
         ) {
-          sightings.push({
+          found.push({
             via_stream_channel: ownerChannel,
             platform: platform as Proof['platform'],
             user_slug: m.user.displayName.toLowerCase(),
@@ -104,14 +89,7 @@ export const confirm = action({
           })
         }
       }
-      return sightings
     }
-    const settled: PromiseSettledResult<Proof[]>[] = await Promise.allSettled(
-      code.stream_channels.map(scanChannel),
-    )
-    const found: Proof[] = settled.flatMap((r: PromiseSettledResult<Proof[]>) =>
-      r.status === 'fulfilled' ? r.value : [],
-    )
     // One user_auth row per distinct author identity, all sharing the
     // viewer's session (reuses the streamer auth storage verbatim).
     const seenIdentity = new Set<string>()

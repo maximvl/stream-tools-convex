@@ -10,8 +10,11 @@
 
 import type * as auth from "../auth.js";
 import type * as authLib from "../authLib.js";
+import type * as chatService from "../chatService.js";
 import type * as crons from "../crons.js";
 import type * as frontendLogs from "../frontendLogs.js";
+import type * as loto from "../loto.js";
+import type * as lotoLib from "../lotoLib.js";
 import type * as lotoWinners from "../lotoWinners.js";
 import type * as maintenance from "../maintenance.js";
 import type * as migrateTemp from "../migrateTemp.js";
@@ -31,8 +34,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authLib: typeof authLib;
+  chatService: typeof chatService;
   crons: typeof crons;
   frontendLogs: typeof frontendLogs;
+  loto: typeof loto;
+  lotoLib: typeof lotoLib;
   lotoWinners: typeof lotoWinners;
   maintenance: typeof maintenance;
   migrateTemp: typeof migrateTemp;

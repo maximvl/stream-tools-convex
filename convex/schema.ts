@@ -133,4 +133,33 @@ export default defineSchema({
     created_at: v.number(),
     expires_at: v.number(),
   }).index('by_lookup', ['tournament_id', 'viewer_session_id']),
+
+  // Loto instances. One game spans multiple stream channels; ownership is
+  // the browser session (which links to all channels via user_auth).
+  // game_id is the instance id: ticket queries filter by it so a new game
+  // never shows old tickets.
+  loto_games: defineTable({
+    owner_session_id: v.string(),
+    channels: v.array(v.string()),
+    last_seen_ts: v.number(),
+    created_at: v.number(),
+  }).index('by_session', ['owner_session_id']),
+
+  // Temporary tickets for the active game. Evicted by cron after 24h.
+  loto_tickets: defineTable({
+    game_id: v.id('loto_games'),
+    owner_id: v.string(),
+    owner_name: v.string(),
+    value: v.array(v.string()),
+    color: v.string(),
+    variant: v.number(),
+    type: v.union(v.literal('chat'), v.literal('points')),
+    source_server: v.string(),
+    source_channel: v.string(),
+    created_at: v.number(),
+    isLatecomer: v.boolean(),
+  })
+    .index('by_game', ['game_id'])
+    .index('by_game_owner', ['game_id', 'owner_id'])
+    .index('by_created', ['created_at']),
 })

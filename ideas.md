@@ -2,3 +2,4 @@
 - Make loto run through backend with syncing to players pages
 - Add loto "afk" mode for registered players, they can specify their numbers, winning text and super game participation
 - customizeable loto ticket?
+- add button for streamer ticket on website
