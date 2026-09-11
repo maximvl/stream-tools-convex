@@ -16,6 +16,11 @@
   }))
 
   $effect(() => {
+    if (game.data !== undefined || game.error) {
+      untrack(() => {
+        lotoStore.markGameLoaded()
+      })
+    }
     const drawn = game.data?.drawn_numbers
     if (drawn) {
       untrack(() => {

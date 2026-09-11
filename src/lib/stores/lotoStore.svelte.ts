@@ -82,6 +82,21 @@ export class LotoStore {
   remoteTickets = $state<LotoTicket[]>([])
   gameId = $state<string | null>(null)
 
+  // First-payload flags for the backend subscriptions. While a game is
+  // active but its data hasn't arrived yet, the UI shows a loading message
+  // instead of misleading empty states.
+  ticketsLoaded = $state(false)
+  gameLoaded = $state(false)
+  backendSyncing = $derived(this.gameId !== null && (!this.ticketsLoaded || !this.gameLoaded))
+
+  markTicketsLoaded() {
+    this.ticketsLoaded = true
+  }
+
+  markGameLoaded() {
+    this.gameLoaded = true
+  }
+
   // Set by the page (has Convex client + session): backend delete call.
   // Store still removes locally first for instant UI feedback.
   ticketRemover: ((ticketId: string) => void) | null = null
@@ -253,6 +268,10 @@ export class LotoStore {
   allTickets = $derived(this.remoteTickets)
 
   setGameId(gameId: string | null) {
+    if (gameId !== this.gameId) {
+      this.ticketsLoaded = false
+      this.gameLoaded = false
+    }
     this.gameId = gameId
   }
 
@@ -263,11 +282,16 @@ export class LotoStore {
   }
 
   // Backend game subscription writes here. Draw pool is recomputed so a
-  // reload or second tab converges to the same state.
+  // reload or second tab converges to the same state. Any rolled numbers
+  // mean the game already started — this is also what restores the
+  // playing phase after a page refresh (gameState itself is local only).
   setDrawnNumbers(numbers: string[]) {
     this.drawnNumbers = [...numbers]
     const drawn = new SvelteSet(numbers)
     this.drawPool = this.fullDrawPool().filter((n) => !drawn.has(n))
+    if (numbers.length > 0) {
+      this.gameState = 'playing'
+    }
   }
 
   setRemoteTickets(tickets: LotoTicket[]) {

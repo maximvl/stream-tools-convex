@@ -17,6 +17,13 @@
   }))
 
   $effect(() => {
+    // Settle (data or error) ends the loading state; on error the UI
+    // simply shows the empty state instead of spinning forever.
+    if (tickets.data !== undefined || tickets.error) {
+      untrack(() => {
+        lotoStore.markTicketsLoaded()
+      })
+    }
     const data = tickets.data?.tickets
     if (data) {
       untrack(() => {
