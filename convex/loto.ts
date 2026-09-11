@@ -3,7 +3,9 @@ import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { fetchChatMessagesBatch, type ChatServiceMessage } from './chatService'
-import { LOTO_TTL_MS, toFrontendTicket, type FrontendTicket } from './lotoLib'
+import { LOTO_TTL_MS, streamerOwnerId, toFrontendTicket, type FrontendTicket } from './lotoLib'
+import { compareChannelPriority } from './authLib'
+import { parseIdentity } from './userIdentity'
 
 const LOTO_MATCH = 'лото'
 const VK_CHAT_BOT_NAME = 'ChatBot'
@@ -78,10 +80,18 @@ function draftFromMessage(
   if (user.displayName.length === 0) return null
   const mention = msg.vkFields?.mentions?.[0]
 
+  // The channel owner shares the synthetic streamer id, so a later `+лото`
+  // message from the streamer upserts the generated ticket instead of
+  // duplicating it (saveBatch matches on owner_id).
+  const ownerIdFor = (displayName: string, fallbackId: string): string =>
+    displayName.toLowerCase() === sourceChannel.toLowerCase()
+      ? streamerOwnerId(sourceServer, sourceChannel)
+      : fallbackId
+
   // VK points ticket via ChatBot mention
   if (sourceServer === 'vkvideo' && user.displayName === VK_CHAT_BOT_NAME && mention) {
     return {
-      owner_id: String(mention.id),
+      owner_id: ownerIdFor(mention.displayName, String(mention.id)),
       owner_name: mention.displayName,
       value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
       type: 'points',
@@ -93,7 +103,7 @@ function draftFromMessage(
   // Twitch points ticket via highlight
   if (sourceServer === 'twitch' && user.twitchFields?.highlighted === true) {
     return {
-      owner_id: user.id,
+      owner_id: ownerIdFor(user.displayName, user.id),
       owner_name: user.displayName,
       value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
       type: 'points',
@@ -104,7 +114,7 @@ function draftFromMessage(
   }
   // Regular chat ticket
   return {
-    owner_id: user.id,
+    owner_id: ownerIdFor(user.displayName, user.id),
     owner_name: user.displayName,
     value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
     type: 'chat',
@@ -197,6 +207,79 @@ export const removeTicket = mutation({
     if (!game || game.owner_session_id !== args.session_id) throw new Error('Not the game owner')
     await ctx.db.delete(args.ticket_id)
     return { deleted: args.ticket_id }
+  },
+})
+
+// Generates a ticket for the streamer's main channel (platform priority:
+// twitch > kick > vkvideo > wtv, same as auth). Upserts on the synthetic
+// streamer id, so pressing again re-rolls instead of duplicating. Rejected
+// once a winner is set — same rule as rolls.
+export const addStreamerTicket = mutation({
+  args: {
+    game_id: v.id('loto_games'),
+    session_id: v.string(),
+    ticket_size: v.optional(v.number()),
+    max_number: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.game_id)
+    if (!game) throw new Error('Game not found')
+    if (game.owner_session_id !== args.session_id) throw new Error('Not the game owner')
+    if (game.winner_ticket_id !== undefined) throw new Error('Game already has a winner')
+
+    const parsed = game.channels.flatMap((c) => {
+      try {
+        const identity = parseIdentity(c)
+        return [{ ...identity, stream_channel: c }]
+      } catch {
+        return []
+      }
+    })
+    if (parsed.length === 0) throw new Error('Game has no valid channels')
+    parsed.sort(compareChannelPriority)
+    const main = parsed[0] as { platform: string; user_slug: string }
+    const channel = main.user_slug.toLowerCase()
+
+    const ticketSize = args.ticket_size ?? DEFAULT_TICKET_SIZE
+    const maxNumber = args.max_number ?? DEFAULT_MAX_NUMBER
+    const ticket = {
+      owner_id: streamerOwnerId(main.platform, channel),
+      owner_name: channel,
+      value: sampleUnique(fullPool(maxNumber), ticketSize),
+      type: 'chat' as const,
+      source_server: main.platform,
+      source_channel: channel,
+      created_at: Date.now(),
+    }
+    const existing = await ctx.db
+      .query('loto_tickets')
+      .withIndex('by_game_owner', (q) =>
+        q.eq('game_id', args.game_id).eq('owner_id', ticket.owner_id),
+      )
+      .unique()
+    let id: Id<'loto_tickets'>
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        owner_name: ticket.owner_name,
+        value: ticket.value,
+        type: ticket.type,
+        source_server: ticket.source_server,
+        source_channel: ticket.source_channel,
+        created_at: ticket.created_at,
+      })
+      id = existing._id
+    } else {
+      id = await ctx.db.insert('loto_tickets', {
+        game_id: args.game_id,
+        ...ticket,
+        color: 'random',
+        variant: 1,
+        isLatecomer: false,
+      })
+    }
+    const row = await ctx.db.get(id)
+    if (!row) throw new Error('Ticket not found')
+    return { ticket: toFrontendTicket(row) }
   },
 })
 

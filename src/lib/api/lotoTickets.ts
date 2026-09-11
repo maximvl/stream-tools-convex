@@ -73,3 +73,31 @@ export async function setLotoWinner(
     ticket_id: ticket_id ?? undefined,
   })
 }
+
+export type StreamerTicket = {
+  id: string
+  owner_id: string
+  owner_name: string
+  value: string[]
+  color: string
+  variant: number
+  type: 'chat' | 'points'
+  source: { server: string; channel: string }
+  created_at: number
+  isLatecomer: boolean
+}
+
+// Generates (or re-rolls) a ticket for the streamer's main channel.
+// Display arrives via the list subscription; the return is a fast path.
+export async function addStreamerTicket(
+  client: ConvexClient,
+  game_id: LotoGameId,
+  opts?: { ticket_size?: number; max_number?: number },
+): Promise<{ ticket: StreamerTicket }> {
+  return await client.mutation(api.loto.addStreamerTicket, {
+    game_id,
+    session_id: requireSession(),
+    ticket_size: opts?.ticket_size,
+    max_number: opts?.max_number,
+  })
+}

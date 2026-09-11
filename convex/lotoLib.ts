@@ -34,6 +34,15 @@ export function toFrontendTicket(row: Doc<'loto_tickets'>): FrontendTicket {
   }
 }
 
+// Synthetic owner id for streamer tickets (generated or written by the
+// channel owner in chat). Sharing one id means a later `+лото` message
+// from the streamer upserts the generated ticket instead of duplicating it.
+// NOTE: streamer chat tickets created before this scheme carry real
+// platform ids and won't merge — they age out via the 24h eviction.
+export function streamerOwnerId(server: string, channel: string): string {
+  return `streamer/${server}/${channel.toLowerCase()}`
+}
+
 // Internal helpers used by the `sync` action (avoids circular imports,
 // same split as auth.ts/authLib.ts and rpsAuth.ts/rpsLib.ts).
 export const getGame = internalQuery({

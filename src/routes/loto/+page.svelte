@@ -29,6 +29,7 @@
     removeLotoTicket,
     pushDrawnNumber,
     setLotoWinner,
+    addStreamerTicket,
   } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
@@ -47,6 +48,7 @@
   setLotoStore(lotoStore)
   const store = getChatStore()
   const countdownTimer = new TimerStore()
+  let addingStreamer = $state(false)
 
   const authStore = new AuthStore()
   lotoStore.setAuthStore(authStore)
@@ -116,6 +118,21 @@
       lotoStore.newGame()
     } catch {
       // ignore — stays on current game
+    }
+  }
+
+  // Generates the streamer ticket for the main channel (backend picks it
+  // by platform priority). Upserts, so pressing again re-rolls.
+  async function addStreamer() {
+    if (!lotoStore.gameId || addingStreamer) return
+    addingStreamer = true
+    try {
+      await addStreamerTicket(convex, lotoStore.gameId as Id<'loto_games'>, pollParams())
+    } catch {
+      // ignore — e.g. winner already set or backend unreachable;
+      // the ticket list subscription shows the outcome either way
+    } finally {
+      addingStreamer = false
     }
   }
 
@@ -251,9 +268,13 @@
 
     <div class="absolute top-30 right-20 w-fit">
       {#if lotoStore.streamerTickets.length === 0}
-        <div class="bg-card2 rounded-xl border border-primary/60 p-4 text-xl">
-          Место билета стримера
-        </div>
+        <Button
+          class="h-auto rounded-xl bg-cyan-600 px-6 py-4 text-xl font-black tracking-tighter text-white uppercase shadow-lg transition-all hover:scale-105 hover:bg-cyan-500 active:scale-95 disabled:opacity-50"
+          onclick={() => addStreamer()}
+          disabled={addingStreamer}
+        >
+          {addingStreamer ? 'Добавляем…' : 'Получить билет стримера'}
+        </Button>
       {:else if streamerUser}
         {#each lotoStore.streamerTickets as ticket (ticket.id)}
           <LotoTicket
