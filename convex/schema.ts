@@ -141,16 +141,12 @@ export default defineSchema({
   loto_games: defineTable({
     owner_session_id: v.string(),
     channels: v.array(v.string()),
-    last_seen_ts: v.number(),
     created_at: v.number(),
     // Source of truth for rolled numbers (browser picks, backend stores).
     drawn_numbers: v.array(v.string()),
-    // Set by the frontend winner watcher; the polling worker stops while set.
+    // Set by the frontend winner watcher; frontend ticket creation stops
+    // while set.
     winner_ticket_id: v.optional(v.id('loto_tickets')),
-    // Worker loop switch. Opt-in only: a missing value means 'stopped',
-    // so deploys never start unsupervised polling. Creating a game flips
-    // previous session games to 'stopped'; channels are kept for history.
-    polling: v.optional(v.union(v.literal('active'), v.literal('stopped'))),
   }).index('by_session', ['owner_session_id']),
 
   // Temporary tickets for the active game. Evicted by cron after 24h.

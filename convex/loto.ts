@@ -1,14 +1,10 @@
-import { action, internalAction, mutation, query, type ActionCtx } from './_generated/server'
+import { mutation, query } from './_generated/server'
 import { v } from 'convex/values'
-import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
-import { fetchChatMessagesBatch, type ChatServiceMessage } from './chatService'
-import { LOTO_TTL_MS, streamerOwnerId, toFrontendTicket, type FrontendTicket } from './lotoLib'
+import { streamerOwnerId, toFrontendTicket, type FrontendTicket } from './lotoLib'
 import { compareChannelPriority } from './authLib'
 import { parseIdentity } from './userIdentity'
 
-const LOTO_MATCH = 'лото'
-const VK_CHAT_BOT_NAME = 'ChatBot'
 const DEFAULT_TICKET_SIZE = 8
 const DEFAULT_MAX_NUMBER = 99
 
@@ -32,136 +28,20 @@ function sampleUnique(pool: string[], n: number): string[] {
   return arr.slice(0, n)
 }
 
-function genTicketNumber(
-  text: string,
-  pool: string[],
-  ticketSize: number,
-  maxNumber: number,
-): string[] {
-  const trimmed = text.trim()
-  if (trimmed.length === 0) return sampleUnique(pool, ticketSize)
-  const parsed = [
-    ...new Set(
-      trimmed
-        .split(' ')
-        .map((n) => parseInt(n))
-        .filter((n) => n >= 1 && n <= maxNumber)
-        .map((n) => n.toString().padStart(2, '0'))
-        .filter((n) => pool.includes(n)),
-    ),
-  ]
-  if (parsed.length < ticketSize) {
-    const options = sampleUnique(pool, 10).filter((o) => !parsed.includes(o))
-    parsed.push(...sampleUnique(options, ticketSize - parsed.length))
-  }
-  return parsed.slice(0, ticketSize)
-}
-
-type TicketDraft = {
-  owner_id: string
-  owner_name: string
-  value: string[]
-  type: 'chat' | 'points'
-  source_server: string
-  source_channel: string
-  created_at: number
-}
-
-function draftFromMessage(
-  msg: ChatServiceMessage,
-  sourceServer: string,
-  sourceChannel: string,
-  pool: string[],
-  ticketSize: number,
-  maxNumber: number,
-): TicketDraft | null {
-  if (!msg.text.toLowerCase().includes(LOTO_MATCH)) return null
-  const user = msg.user
-  if (user.displayName.length === 0) return null
-  const mention = msg.vkFields?.mentions?.[0]
-
-  // The channel owner shares the synthetic streamer id, so a later `+лото`
-  // message from the streamer upserts the generated ticket instead of
-  // duplicating it (saveBatch matches on owner_id).
-  const ownerIdFor = (displayName: string, fallbackId: string): string =>
-    displayName.toLowerCase() === sourceChannel.toLowerCase()
-      ? streamerOwnerId(sourceServer, sourceChannel)
-      : fallbackId
-
-  // VK points ticket via ChatBot mention
-  if (sourceServer === 'vkvideo' && user.displayName === VK_CHAT_BOT_NAME && mention) {
-    return {
-      owner_id: ownerIdFor(mention.displayName, String(mention.id)),
-      owner_name: mention.displayName,
-      value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
-      type: 'points',
-      source_server: sourceServer,
-      source_channel: sourceChannel,
-      created_at: msg.timestampMs,
-    }
-  }
-  // Twitch points ticket via highlight
-  if (sourceServer === 'twitch' && user.twitchFields?.highlighted === true) {
-    return {
-      owner_id: ownerIdFor(user.displayName, user.id),
-      owner_name: user.displayName,
-      value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
-      type: 'points',
-      source_server: sourceServer,
-      source_channel: sourceChannel,
-      created_at: msg.timestampMs,
-    }
-  }
-  // Regular chat ticket
-  return {
-    owner_id: ownerIdFor(user.displayName, user.id),
-    owner_name: user.displayName,
-    value: genTicketNumber(msg.text, pool, ticketSize, maxNumber),
-    type: 'chat',
-    source_server: sourceServer,
-    source_channel: sourceChannel,
-    created_at: msg.timestampMs,
-  }
-}
-
 // ---- Public API ----
 
 export const createGame = mutation({
   args: {
     session_id: v.string(),
     channels: v.array(v.string()),
-    ticket_size: v.optional(v.number()),
-    max_number: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now()
-    // Stop chains of previous games from this session via the polling flag
-    // (channels are kept for history). Their workers self-terminate at the
-    // next tick. Without this, every created game would keep polling forever.
-    const previous = await ctx.db
-      .query('loto_games')
-      .withIndex('by_session', (q) => q.eq('owner_session_id', args.session_id))
-      .collect()
-    for (const g of previous) {
-      if (g.polling !== 'stopped') {
-        await ctx.db.patch(g._id, { polling: 'stopped' })
-      }
-    }
     const game_id = await ctx.db.insert('loto_games', {
       owner_session_id: args.session_id,
       channels: args.channels,
-      last_seen_ts: now,
       created_at: now,
       drawn_numbers: [],
-      polling: 'active',
-    })
-    // Start the polling worker: each tick schedules the next one, so the
-    // loop lives entirely in the backend (background tabs get throttled).
-    // Poll params travel in the scheduler args — nothing is snapshotted.
-    await ctx.scheduler.runAfter(2000, internal.loto.pollTick, {
-      game_id,
-      ticket_size: args.ticket_size,
-      max_number: args.max_number,
     })
     return { game_id }
   },
@@ -179,11 +59,9 @@ export const gamesForSession = query({
       .map((g) => ({
         game_id: g._id,
         channels: g.channels,
-        last_seen_ts: g.last_seen_ts,
         created_at: g.created_at,
         drawn_numbers: g.drawn_numbers,
         winner_ticket_id: g.winner_ticket_id,
-        polling: g.polling,
       }))
   },
 })
@@ -297,124 +175,63 @@ export const addStreamerTicket = mutation({
   },
 })
 
-// One incremental chat→tickets import: fetch messages since last_seen_ts,
-// generate tickets, upsert, advance the watermark. Shared by the public
-// `sync` (manual poke) and the `pollTick` worker loop.
-async function pollOnce(
-  ctx: ActionCtx,
-  args: { game_id: Id<'loto_games'>; ticketSize: number; maxNumber: number },
-): Promise<{ synced: number }> {
-  const game = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
-  if (!game) throw new Error('Game not found')
-  const pool = fullPool(args.maxNumber)
-  const tsFrom = game.last_seen_ts
-
-  const byChannel = await fetchChatMessagesBatch(game.channels, tsFrom)
-  const drafts: TicketDraft[] = []
-  let maxSeen = tsFrom
-  for (const streamChannel of game.channels) {
-    const sep = streamChannel.indexOf('/')
-    const sourceServer = sep > 0 ? streamChannel.slice(0, sep) : streamChannel
-    const sourceChannel = sep > 0 ? streamChannel.slice(sep + 1) : streamChannel
-    for (const m of byChannel.get(streamChannel) ?? []) {
-      if (m.timestampMs > maxSeen) maxSeen = m.timestampMs
-      const draft = draftFromMessage(
-        m,
-        sourceServer,
-        sourceChannel,
-        pool,
-        args.ticketSize,
-        args.maxNumber,
-      )
-      if (draft) drafts.push(draft)
-    }
-  }
-  // One ticket per owner: last message wins within the batch.
-  const byOwner = new Map<string, TicketDraft>()
-  for (const d of drafts) byOwner.set(d.owner_id, d)
-
-  if (byOwner.size > 0) {
-    await ctx.runMutation(internal.lotoLib.saveBatch, {
-      game_id: args.game_id,
-      tickets: [...byOwner.values()],
-    })
-  }
-  if (maxSeen > tsFrom) {
-    await ctx.runMutation(internal.lotoLib.touchSeen, {
-      game_id: args.game_id,
-      last_seen_ts: maxSeen,
-    })
-  }
-  return { synced: byOwner.size }
-}
-
-// Manual one-shot poll (debugging / poke). The live loop is `pollTick`.
-export const sync = action({
+// Frontend-created ticket (one ticket per owner: resending from the same
+// owner replaces the previous ticket — "last message wins"). Tickets are
+// generated in the frontend from its chat polling and persisted here.
+export const addTicket = mutation({
   args: {
     game_id: v.id('loto_games'),
     session_id: v.string(),
-    ticket_size: v.optional(v.number()),
-    max_number: v.optional(v.number()),
+    owner_id: v.string(),
+    owner_name: v.string(),
+    value: v.array(v.string()),
+    type: v.union(v.literal('chat'), v.literal('points')),
+    source_server: v.string(),
+    source_channel: v.string(),
+    created_at: v.number(),
   },
-  handler: async (ctx, args): Promise<{ tickets: FrontendTicket[]; synced: number }> => {
-    const game = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
+  handler: async (ctx, args): Promise<{ ticket: FrontendTicket }> => {
+    const game = await ctx.db.get(args.game_id)
     if (!game) throw new Error('Game not found')
     if (game.owner_session_id !== args.session_id) throw new Error('Not the game owner')
-    const { synced } = await pollOnce(ctx, {
-      game_id: args.game_id,
-      ticketSize: args.ticket_size ?? DEFAULT_TICKET_SIZE,
-      maxNumber: args.max_number ?? DEFAULT_MAX_NUMBER,
-    })
-    const tickets = await ctx.runQuery(internal.lotoLib.listTickets, { game_id: args.game_id })
-    return { tickets, synced }
-  },
-})
-
-const POLL_INTERVAL_MS = 2000
-
-// Backend polling worker (opt-in via createGame `start_polling`). Each tick
-// schedules the next one, so no frontend timer is needed. Stops unless the
-// flag is 'active' — a missing value means 'stopped', so stray chains die
-// on deploy. Also stops on winner, missing game, empty channels, or TTL age.
-// Deliberately no cron backstop: a broken chain freezes the game until a
-// new one starts.
-export const pollTick = internalAction({
-  args: {
-    game_id: v.id('loto_games'),
-    ticket_size: v.optional(v.number()),
-    max_number: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<{ polling: boolean; reason?: string; synced?: number }> => {
-    const game = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
-    if (!game) return { polling: false, reason: 'gone' }
-    if (game.polling !== 'active') return { polling: false, reason: 'stopped' }
-    if (game.winner_ticket_id !== undefined) return { polling: false, reason: 'winner' }
-    if (game.channels.length === 0) return { polling: false, reason: 'no-channels' }
-    if (Date.now() - game.created_at > LOTO_TTL_MS) return { polling: false, reason: 'expired' }
-
-    const ticketSize = args.ticket_size ?? DEFAULT_TICKET_SIZE
-    const maxNumber = args.max_number ?? DEFAULT_MAX_NUMBER
-    const { synced } = await pollOnce(ctx, {
-      game_id: args.game_id,
-      ticketSize,
-      maxNumber,
-    })
-
-    // A winner may have been reported, the flag flipped, or a newer game
-    // created, while this tick was polling — re-read before scheduling.
-    const fresh = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
-    if (!fresh || fresh.winner_ticket_id !== undefined) {
-      return { polling: false, reason: 'winner', synced }
+    if (game.winner_ticket_id !== undefined) throw new Error('Game already has a winner')
+    if (args.owner_id.length === 0) throw new Error('Invalid owner_id')
+    if (args.owner_name.length === 0) throw new Error('Invalid owner_name')
+    if (args.value.length === 0 || args.value.length > 99) throw new Error('Invalid value')
+    for (const n of args.value) {
+      if (!/^\d{2}$/.test(n)) throw new Error('Invalid number')
     }
-    if (fresh.polling !== 'active') {
-      return { polling: false, reason: 'stopped', synced }
+    const draft = {
+      owner_id: args.owner_id,
+      owner_name: args.owner_name,
+      value: args.value,
+      type: args.type,
+      source_server: args.source_server,
+      source_channel: args.source_channel,
+      created_at: args.created_at,
     }
-    await ctx.scheduler.runAfter(POLL_INTERVAL_MS, internal.loto.pollTick, {
-      game_id: args.game_id,
-      ticket_size: args.ticket_size,
-      max_number: args.max_number,
-    })
-    return { polling: true, synced }
+    const existing = await ctx.db
+      .query('loto_tickets')
+      .withIndex('by_game_owner', (q) =>
+        q.eq('game_id', args.game_id).eq('owner_id', args.owner_id),
+      )
+      .unique()
+    let id: Id<'loto_tickets'>
+    if (existing) {
+      await ctx.db.patch(existing._id, draft)
+      id = existing._id
+    } else {
+      id = await ctx.db.insert('loto_tickets', {
+        game_id: args.game_id,
+        ...draft,
+        color: 'random',
+        variant: 1,
+        isLatecomer: false,
+      })
+    }
+    const row = await ctx.db.get(id)
+    if (!row) throw new Error('Ticket not found')
+    return { ticket: toFrontendTicket(row) }
   },
 })
 
@@ -428,7 +245,6 @@ export const getGame = query({
       channels: game.channels,
       drawn_numbers: game.drawn_numbers,
       winner_ticket_id: game.winner_ticket_id,
-      polling: game.polling,
       created_at: game.created_at,
     }
   },
@@ -455,7 +271,7 @@ export const pushDrawnNumber = mutation({
 })
 
 // Frontend winner watcher reports the derived winner (or null to clear,
-// e.g. after the winning ticket is deleted — polling then resumes).
+// e.g. after the winning ticket is deleted).
 export const setWinner = mutation({
   args: {
     game_id: v.id('loto_games'),

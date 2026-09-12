@@ -24,6 +24,7 @@
   import { getSessionId } from '$lib/session'
   import { LocalStore } from '$lib/stores/localStore.svelte'
   import {
+    addLotoTicket,
     createLotoGame,
     setLotoChannels,
     removeLotoTicket,
@@ -62,6 +63,10 @@
   lotoStore.ticketRemover = (ticketId: string) => {
     removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
   }
+  lotoStore.ticketSaver = (draft) => {
+    if (!lotoStore.gameId) return
+    addLotoTicket(convex, lotoStore.gameId as Id<'loto_games'>, draft).catch(() => {})
+  }
   lotoStore.drawPusher = (number: string) => {
     if (!lotoStore.gameId) return
     pushDrawnNumber(convex, lotoStore.gameId as Id<'loto_games'>, number).catch(() => {})
@@ -78,15 +83,15 @@
   // Stream channels for the game, from connected chats (lowercased match backend).
   const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
 
-  // Poll params travel with the worker chain (no stored snapshot).
-  // Creating a game always starts its polling worker.
+  // Size params for the generated streamer ticket (chat tickets carry their
+  // own values from the frontend ticket factory).
   const pollParams = () => ({
     ticket_size: lotoConfig.value.ticket_size,
     max_number: lotoConfig.value.max_number,
   })
 
   // In-flight guard: without it, rapid connection flaps before the first
-  // create resolves would mint duplicate games (one polling chain each).
+  // create resolves would mint duplicate games.
   let ensuringGame = false
 
   async function ensureGame() {
@@ -97,7 +102,7 @@
       try {
         await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, gameChannels)
       } catch {
-        // Backend unavailable — display polling still works.
+        // Backend unavailable — chat polling still works, tickets just stay local.
       }
       return
     }
@@ -105,12 +110,12 @@
     try {
       // Re-check: a concurrent path may have set the game while awaiting.
       if (!lotoStore.gameId) {
-        const res = await createLotoGame(convex, gameChannels, pollParams())
+        const res = await createLotoGame(convex, gameChannels)
         gameIdStore.value = res.game_id as string
         lotoStore.setGameId(res.game_id as string)
       }
     } catch {
-      // Backend unavailable — display polling still works, tickets just stay empty.
+      // Backend unavailable — chat polling still works, tickets just stay local.
     } finally {
       ensuringGame = false
     }
@@ -128,7 +133,7 @@
     if (ensuringGame) return
     ensuringGame = true
     try {
-      const res = await createLotoGame(convex, gameChannels, pollParams())
+      const res = await createLotoGame(convex, gameChannels)
       gameIdStore.value = res.game_id as string
       lotoStore.setGameId(res.game_id as string)
       lotoStore.newGame()
@@ -156,9 +161,9 @@
 
   // Live backend state for the active game instance (subscriptions mount
   // only once a game exists — this convex-svelte version has no 'skip').
-  // Ticket polling runs in the backend worker started by createGame
-  // (start_polling: true), so there is no frontend timer here — the loop
-  // survives background tabs. Display is owned solely by the subscriptions.
+  // Tickets are created in the frontend from its chat polling and saved via
+  // ticketSaver; the subscriptions below echo the stored rows back (source
+  // of truth for reloads and second tabs).
 
   $effect(() => {
     untrack(() => {

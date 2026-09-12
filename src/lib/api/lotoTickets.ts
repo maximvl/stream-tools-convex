@@ -5,6 +5,7 @@ import type { ConvexClient } from 'convex/browser'
 import { api } from '../../../convex/_generated/api.js'
 import type { Id } from '../../../convex/_generated/dataModel.js'
 import { getSessionId } from '$lib/session'
+import type { LotoTicketDraft } from '$lib/stores/lotoStore.svelte'
 
 export type LotoGameId = Id<'loto_games'>
 export type LotoTicketId = Id<'loto_tickets'>
@@ -18,13 +19,10 @@ function requireSession(): string {
 export async function createLotoGame(
   client: ConvexClient,
   channels: string[],
-  opts?: { ticket_size?: number; max_number?: number },
 ): Promise<{ game_id: LotoGameId }> {
   return await client.mutation(api.loto.createGame, {
     session_id: requireSession(),
     channels,
-    ticket_size: opts?.ticket_size,
-    max_number: opts?.max_number,
   })
 }
 
@@ -71,6 +69,26 @@ export async function setLotoWinner(
     game_id,
     session_id: requireSession(),
     ticket_id: ticket_id ?? undefined,
+  })
+}
+
+// Persists a frontend-created ticket (upserts on owner_id server-side,
+// so resending from the same owner replaces the previous ticket).
+export async function addLotoTicket(
+  client: ConvexClient,
+  game_id: LotoGameId,
+  draft: LotoTicketDraft,
+): Promise<{ ticket: StreamerTicket }> {
+  return await client.mutation(api.loto.addTicket, {
+    game_id,
+    session_id: requireSession(),
+    owner_id: draft.owner_id,
+    owner_name: draft.owner_name,
+    value: draft.value,
+    type: draft.type,
+    source_server: draft.source_server,
+    source_channel: draft.source_channel,
+    created_at: draft.created_at,
   })
 }
 
