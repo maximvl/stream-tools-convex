@@ -79,26 +79,40 @@
   const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
 
   // Poll params travel with the worker chain (no stored snapshot).
+  // Creating a game always starts its polling worker.
   const pollParams = () => ({
     ticket_size: lotoConfig.value.ticket_size,
     max_number: lotoConfig.value.max_number,
   })
 
+  // In-flight guard: without it, rapid connection flaps before the first
+  // create resolves would mint duplicate games (one polling chain each).
+  let ensuringGame = false
+
   async function ensureGame() {
     if (!getSessionId()) return
     if (gameChannels.length === 0) return
+    if (ensuringGame) return
+    if (lotoStore.gameId) {
+      try {
+        await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, gameChannels)
+      } catch {
+        // Backend unavailable — display polling still works.
+      }
+      return
+    }
+    ensuringGame = true
     try {
+      // Re-check: a concurrent path may have set the game while awaiting.
       if (!lotoStore.gameId) {
         const res = await createLotoGame(convex, gameChannels, pollParams())
         gameIdStore.value = res.game_id as string
         lotoStore.setGameId(res.game_id as string)
-      } else {
-        await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, gameChannels).catch(
-          () => undefined,
-        )
       }
     } catch {
       // Backend unavailable — display polling still works, tickets just stay empty.
+    } finally {
+      ensuringGame = false
     }
   }
 
@@ -111,6 +125,8 @@
 
   async function newBackendGame() {
     if (gameChannels.length === 0) return
+    if (ensuringGame) return
+    ensuringGame = true
     try {
       const res = await createLotoGame(convex, gameChannels, pollParams())
       gameIdStore.value = res.game_id as string
@@ -118,6 +134,8 @@
       lotoStore.newGame()
     } catch {
       // ignore — stays on current game
+    } finally {
+      ensuringGame = false
     }
   }
 
@@ -138,8 +156,9 @@
 
   // Live backend state for the active game instance (subscriptions mount
   // only once a game exists — this convex-svelte version has no 'skip').
-  // Ticket polling runs in the backend worker started by createGame, so
-  // there is no frontend timer here at all.
+  // Ticket polling runs in the backend worker started by createGame
+  // (start_polling: true), so there is no frontend timer here — the loop
+  // survives background tabs. Display is owned solely by the subscriptions.
 
   $effect(() => {
     untrack(() => {

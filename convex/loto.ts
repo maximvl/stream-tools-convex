@@ -135,12 +135,25 @@ export const createGame = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now()
+    // Stop chains of previous games from this session via the polling flag
+    // (channels are kept for history). Their workers self-terminate at the
+    // next tick. Without this, every created game would keep polling forever.
+    const previous = await ctx.db
+      .query('loto_games')
+      .withIndex('by_session', (q) => q.eq('owner_session_id', args.session_id))
+      .collect()
+    for (const g of previous) {
+      if (g.polling !== 'stopped') {
+        await ctx.db.patch(g._id, { polling: 'stopped' })
+      }
+    }
     const game_id = await ctx.db.insert('loto_games', {
       owner_session_id: args.session_id,
       channels: args.channels,
       last_seen_ts: now,
       created_at: now,
       drawn_numbers: [],
+      polling: 'active',
     })
     // Start the polling worker: each tick schedules the next one, so the
     // loop lives entirely in the backend (background tabs get throttled).
@@ -170,6 +183,7 @@ export const gamesForSession = query({
         created_at: g.created_at,
         drawn_numbers: g.drawn_numbers,
         winner_ticket_id: g.winner_ticket_id,
+        polling: g.polling,
       }))
   },
 })
@@ -358,11 +372,12 @@ export const sync = action({
 
 const POLL_INTERVAL_MS = 2000
 
-// Backend polling worker. Started by `createGame`; each tick schedules the
-// next one, so no frontend timer is needed (background tabs get throttled).
-// Stops when a winner is set, the game vanishes, has no channels, or ages
-// past the eviction TTL. Deliberately no cron backstop: a broken chain
-// freezes the game until a new one starts.
+// Backend polling worker (opt-in via createGame `start_polling`). Each tick
+// schedules the next one, so no frontend timer is needed. Stops unless the
+// flag is 'active' — a missing value means 'stopped', so stray chains die
+// on deploy. Also stops on winner, missing game, empty channels, or TTL age.
+// Deliberately no cron backstop: a broken chain freezes the game until a
+// new one starts.
 export const pollTick = internalAction({
   args: {
     game_id: v.id('loto_games'),
@@ -372,6 +387,7 @@ export const pollTick = internalAction({
   handler: async (ctx, args): Promise<{ polling: boolean; reason?: string; synced?: number }> => {
     const game = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
     if (!game) return { polling: false, reason: 'gone' }
+    if (game.polling !== 'active') return { polling: false, reason: 'stopped' }
     if (game.winner_ticket_id !== undefined) return { polling: false, reason: 'winner' }
     if (game.channels.length === 0) return { polling: false, reason: 'no-channels' }
     if (Date.now() - game.created_at > LOTO_TTL_MS) return { polling: false, reason: 'expired' }
@@ -384,10 +400,14 @@ export const pollTick = internalAction({
       maxNumber,
     })
 
-    // A winner may have been reported while this tick was polling.
+    // A winner may have been reported, the flag flipped, or a newer game
+    // created, while this tick was polling — re-read before scheduling.
     const fresh = await ctx.runQuery(internal.lotoLib.getGame, { game_id: args.game_id })
     if (!fresh || fresh.winner_ticket_id !== undefined) {
       return { polling: false, reason: 'winner', synced }
+    }
+    if (fresh.polling !== 'active') {
+      return { polling: false, reason: 'stopped', synced }
     }
     await ctx.scheduler.runAfter(POLL_INTERVAL_MS, internal.loto.pollTick, {
       game_id: args.game_id,
@@ -408,6 +428,7 @@ export const getGame = query({
       channels: game.channels,
       drawn_numbers: game.drawn_numbers,
       winner_ticket_id: game.winner_ticket_id,
+      polling: game.polling,
       created_at: game.created_at,
     }
   },
