@@ -236,22 +236,30 @@
   <div class="dark relative flex min-h-screen flex-col overflow-hidden p-6">
     <div class="fixed top-6 left-6 z-10 flex flex-col gap-4">
       <ConnectionDialog />
-      <div class="bg-card2 w-fit rounded-lg">
-        <LotoSettingsDialog />
-      </div>
       <AuthDialog {authStore} />
+      <div class="flex gap-2">
+        <div class="bg-card2 flex-1 rounded-lg">
+          <LotoSettingsDialog />
+        </div>
+        <Button
+          class="flex-1 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black tracking-tighter uppercase shadow-lg transition-all hover:scale-105 hover:bg-amber-500 active:scale-95"
+          onclick={() => newBackendGame()}
+        >
+          Новая игра
+        </Button>
+      </div>
       {#if lotoStore.gameState === 'registration'}
         <div class="bg-card2 flex flex-col gap-2 rounded-xl p-2">
           <div class="text-center">Таймер</div>
-          <div class="flex flex-col gap-2">
+          <div class="flex gap-2">
             <Button
-              class="h-auto rounded-xl bg-blue-600 px-4 py-2 text-sm font-black tracking-tighter uppercase shadow-lg transition-all hover:scale-105 hover:bg-blue-500 active:scale-95"
+              class="h-auto flex-1 rounded-xl bg-blue-600 px-4 py-2 text-sm font-black tracking-tighter uppercase shadow-lg transition-all hover:scale-105 hover:bg-blue-500 active:scale-95"
               onclick={() => addTime(60)}
             >
               +1 мин
             </Button>
             <Button
-              class="h-auto rounded-xl bg-purple-600 px-4 py-2 text-sm font-black tracking-tighter uppercase shadow-lg transition-all hover:scale-105 hover:bg-purple-500 active:scale-95"
+              class="h-auto flex-1 rounded-xl bg-purple-600 px-4 py-2 text-sm font-black tracking-tighter uppercase shadow-lg transition-all hover:scale-105 hover:bg-purple-500 active:scale-95"
               onclick={() => addTime(30)}
             >
               +30 сек
@@ -316,12 +324,6 @@
               onclick={() => lotoStore.start()}
             >
               Начать
-            </Button>
-            <Button
-              class="h-auto rounded-xl bg-amber-600 px-6 py-6 text-xl font-black tracking-tighter uppercase shadow-xl transition-all hover:scale-105 hover:bg-amber-500 active:scale-95"
-              onclick={() => newBackendGame()}
-            >
-              Новая игра
             </Button>
             {#if countdownTimer.limitMs > 0}
               <div class="bg-card">

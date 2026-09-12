@@ -45,7 +45,7 @@
   role="region"
   aria-label="Прошлые победители"
 >
-  <div>Прошлые победители</div>
+  <div class="text-center">Прошлые победители</div>
   <div class="mt-4 max-h-screen overflow-y-auto pr-4">
     {#each lotoStore.winnersFlatSorted as winner (`${winner.id}-${winner.created_at}-${winner.stream_channel}`)}
       {@const [server, channel] = winner.stream_channel.split('/')}
