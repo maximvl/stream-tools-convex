@@ -83,6 +83,14 @@
   // Stream channels for the game, from connected chats (lowercased match backend).
   const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
 
+  // Owner-only gate for the streamer-ticket button: this session must have
+  // proved ownership of every active channel (fail closed while auth state
+  // is still loading — missing entries count as not authed).
+  const isChannelOwner = $derived(
+    store.connectedConnections.length > 0 &&
+      store.connectedConnections.every((c) => authStore.connectionInfo[c]?.authenticated ?? false),
+  )
+
   // Size params for the generated streamer ticket (chat tickets carry their
   // own values from the frontend ticket factory).
   const pollParams = () => ({
@@ -299,7 +307,7 @@
     </div>
 
     <div class="absolute top-30 right-20 w-fit">
-      {#if lotoStore.streamerTickets.length === 0}
+      {#if lotoStore.streamerTickets.length === 0 && isChannelOwner}
         <Button
           class="rounded-xl border border-cyan-800 bg-cyan-950 px-4 py-2 text-base font-medium text-cyan-200 transition-colors hover:bg-cyan-900 disabled:opacity-50"
           onclick={() => addStreamer()}
