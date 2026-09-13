@@ -147,6 +147,11 @@ export default defineSchema({
     // Set by the frontend winner watcher; frontend ticket creation stops
     // while set.
     winner_ticket_id: v.optional(v.id('loto_tickets')),
+    // Cumulative tickets ever added to this game (upserts and re-rolls don't
+    // double-count). Never decremented — survives ticket eviction so totals
+    // stay visible as stats. Optional: games created before this field
+    // existed read as 0.
+    tickets_amount: v.optional(v.number()),
   }).index('by_session', ['owner_session_id']),
 
   // Temporary tickets for the active game. Evicted by cron after 24h.

@@ -42,6 +42,7 @@ export const createGame = mutation({
       channels: args.channels,
       created_at: now,
       drawn_numbers: [],
+      tickets_amount: 0,
     })
     return { game_id }
   },
@@ -62,6 +63,7 @@ export const gamesForSession = query({
         created_at: g.created_at,
         drawn_numbers: g.drawn_numbers,
         winner_ticket_id: g.winner_ticket_id,
+        tickets_amount: g.tickets_amount ?? 0,
       }))
   },
 })
@@ -168,6 +170,8 @@ export const addStreamerTicket = mutation({
         variant: 1,
         isLatecomer: false,
       })
+      // New owner — count it. Re-rolls patch in place and don't double-count.
+      await ctx.db.patch(args.game_id, { tickets_amount: (game.tickets_amount ?? 0) + 1 })
     }
     const row = await ctx.db.get(id)
     if (!row) throw new Error('Ticket not found')
@@ -228,6 +232,9 @@ export const addTicket = mutation({
         variant: 1,
         isLatecomer: false,
       })
+      // New owner — count it. Resends from the same owner patch in place
+      // and don't double-count.
+      await ctx.db.patch(args.game_id, { tickets_amount: (game.tickets_amount ?? 0) + 1 })
     }
     const row = await ctx.db.get(id)
     if (!row) throw new Error('Ticket not found')
@@ -246,6 +253,7 @@ export const getGame = query({
       drawn_numbers: game.drawn_numbers,
       winner_ticket_id: game.winner_ticket_id,
       created_at: game.created_at,
+      tickets_amount: game.tickets_amount ?? 0,
     }
   },
 })
