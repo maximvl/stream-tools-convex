@@ -309,6 +309,7 @@ export class LotoStore {
     if (gameId !== this.gameId) {
       this.ticketsLoaded = false
       this.gameLoaded = false
+      this.gameCreatedAt = null
     }
     this.gameId = gameId
   }
@@ -330,6 +331,15 @@ export class LotoStore {
     if (numbers.length > 0) {
       this.gameState = 'playing'
     }
+  }
+
+  // Backend game creation time, written by the game subscription. Used by
+  // the page to detect stale games (old + zero tickets → auto-rotate).
+  // Null until the first subscription payload arrives.
+  gameCreatedAt = $state<number | null>(null)
+
+  setGameCreatedAt(createdAt: number) {
+    this.gameCreatedAt = createdAt
   }
 
   // Temp ids of optimistic tickets not yet confirmed by the backend echo.

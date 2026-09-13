@@ -14,9 +14,9 @@ export const evictExpiredAuthKeys = internalMutation({
   },
 })
 
-// Loto tickets are temporary: drop tickets older than the TTL, then drop
-// games older than the TTL (with any remaining tickets) so a new game
-// never sees them.
+// Loto tickets are temporary: drop tickets older than the TTL. Game rows
+// are kept forever — the frontend auto-rotates to a fresh game once the
+// active one goes stale and empty, so a new game never sees old tickets.
 export const evictExpiredLotoTickets = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -26,20 +26,6 @@ export const evictExpiredLotoTickets = internalMutation({
       .withIndex('by_created', (q) => q.lt('created_at', cutoff))
       .collect()
     for (const row of oldTickets) await ctx.db.delete(row._id)
-    const oldGames = await ctx.db
-      .query('loto_games')
-      .filter((q) => q.lt(q.field('created_at'), cutoff))
-      .collect()
-    let gameTickets = 0
-    for (const game of oldGames) {
-      const tickets = await ctx.db
-        .query('loto_tickets')
-        .withIndex('by_game', (q) => q.eq('game_id', game._id))
-        .collect()
-      for (const t of tickets) await ctx.db.delete(t._id)
-      gameTickets += tickets.length
-      await ctx.db.delete(game._id)
-    }
-    return { evictedTickets: oldTickets.length + gameTickets, evictedGames: oldGames.length }
+    return { evictedTickets: oldTickets.length }
   },
 })

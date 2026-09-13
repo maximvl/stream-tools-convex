@@ -98,3 +98,9 @@ export const SuperGameIcons = {
   x3: SmileIcons.pog,
   bomb: SmileIcons.gaga,
 } as const
+
+// A loto game older than this with zero tickets is considered stale and the
+// loto page auto-rotates to a fresh game on open. Must stay in sync with
+// LOTO_GAME_STALE_AFTER_MS in convex/lotoLib.ts (kept below the 24h ticket
+// TTL so an active game never loses tickets underneath it).
+export const LOTO_GAME_STALE_AFTER_MS = 20 * 60 * 60 * 1000

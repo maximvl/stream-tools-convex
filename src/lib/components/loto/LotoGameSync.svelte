@@ -27,5 +27,11 @@
         lotoStore.setDrawnNumbers(drawn)
       })
     }
+    const createdAt = game.data?.created_at
+    if (createdAt !== undefined) {
+      untrack(() => {
+        lotoStore.setGameCreatedAt(createdAt)
+      })
+    }
   })
 </script>

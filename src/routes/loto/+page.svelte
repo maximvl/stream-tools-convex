@@ -34,7 +34,7 @@
   } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
-  import { BackgroundImages } from '$lib/constants'
+  import { BackgroundImages, LOTO_GAME_STALE_AFTER_MS } from '$lib/constants'
 
   import BgPattern5 from '$lib/components/common/BgPattern5.svelte'
   import LotoTicketsSync from '$lib/components/loto/LotoTicketsSync.svelte'
@@ -102,6 +102,9 @@
   // create resolves would mint duplicate games.
   let ensuringGame = false
 
+  // One rotation attempt per game id: a failed create must not retry-loop.
+  let rotationAttemptedFor: string | null = null
+
   async function ensureGame() {
     if (!getSessionId()) return
     if (gameChannels.length === 0) return
@@ -136,8 +139,37 @@
     })
   })
 
+  // Auto-rotate stale games: older than LOTO_GAME_STALE_AFTER_MS.
+  // Only fires on fully loaded state so unconfirmed
+  // optimistic tickets also block rotation; a fresh empty game is young and
+  // never matches. Missing channels never block it: the new game starts
+  // channel-less and ensureGame syncs channels in when they connect.
+  // Reuses newBackendGame for the reset + LocalStore write.
+  $effect(() => {
+    if (!lotoStore.gameLoaded || !lotoStore.ticketsLoaded) return
+    const createdAt = lotoStore.gameCreatedAt
+    if (createdAt !== null && Date.now() - createdAt <= LOTO_GAME_STALE_AFTER_MS) return
+    const gameId = lotoStore.gameId
+    if (!gameId || rotationAttemptedFor === gameId) return
+    // No session yet (minted when the first channel mounts) — retry when
+    // channels arrive via the gameChannels dep, without consuming the
+    // single attempt.
+    void gameChannels.length
+    if (!getSessionId()) return
+    // A concurrent ensureGame create will either mint a fresh game (mooting
+    // this) or settle without changes — either way retry on the next change,
+    // so don't consume the single attempt here.
+    if (ensuringGame) return
+    rotationAttemptedFor = gameId
+    untrack(() => {
+      void newBackendGame()
+    })
+  })
+
   async function newBackendGame() {
-    if (gameChannels.length === 0) return
+    // No channels guard: a game with zero channels is valid (channels sync
+    // in later via ensureGame) — missing channels or tickets must never
+    // block creating a new game.
     if (ensuringGame) return
     ensuringGame = true
     try {

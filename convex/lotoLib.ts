@@ -3,6 +3,12 @@ import type { Doc } from './_generated/dataModel'
 // Tickets/games older than this are evicted by cron.
 export const LOTO_TTL_MS = 24 * 60 * 60 * 1000
 
+// A game older than this with zero tickets is considered stale: its tickets
+// have aged out (or it never got any) and the frontend auto-rotates to a
+// fresh game on open. Kept below LOTO_TTL_MS so an active game never loses
+// tickets underneath it. Mirrored in src/lib/constants.ts for the frontend.
+export const LOTO_GAME_STALE_AFTER_MS = 20 * 60 * 60 * 1000
+
 export type FrontendTicket = {
   id: string
   owner_id: string
