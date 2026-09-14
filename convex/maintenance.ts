@@ -29,3 +29,16 @@ export const evictExpiredLotoTickets = internalMutation({
     return { evictedTickets: oldTickets.length }
   },
 })
+
+// Loto bans expire after 7 days: drop expired rows hourly.
+export const evictExpiredLotoBans = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const expired = await ctx.db
+      .query('loto_bans')
+      .withIndex('by_expiry', (q) => q.lt('expires_at', Date.now()))
+      .collect()
+    for (const row of expired) await ctx.db.delete(row._id)
+    return { evictedBans: expired.length }
+  },
+})

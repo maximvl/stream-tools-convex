@@ -14,4 +14,10 @@ crons.interval(
   internal.maintenance.evictExpiredLotoTickets,
   {},
 )
+crons.interval(
+  'evict expired loto bans',
+  { hours: 1 },
+  internal.maintenance.evictExpiredLotoBans,
+  {},
+)
 export default crons

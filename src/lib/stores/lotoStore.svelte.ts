@@ -49,6 +49,12 @@ export function streamerOwnerId(server: string, channel: string): string {
   return `streamer/${server}/${channel.toLowerCase()}`
 }
 
+// Ban-list key: display_name + stream channel, all case-insensitive.
+// Mirrors backend (channel_lower, display_name_lower) matching.
+export function banKey(server: string, channel: string, displayName: string): string {
+  return `${server.toLowerCase()}/${channel.toLowerCase()}/${displayName.toLowerCase()}`
+}
+
 export type LotoConfig = {
   ticket_size: number
   max_number: number
@@ -132,6 +138,31 @@ export class LotoStore {
   // Set by the page (has Convex client + session): backend delete call.
   // Store still removes locally first for instant UI feedback.
   ticketRemover: ((ticketId: string) => void) | null = null
+
+  // Set by the page: backend ban call (creates a 7-day ban row for
+  // display_name + stream channel and deletes the ticket).
+  banSaver: ((ticketId: string) => void) | null = null
+
+  // Ban list for the active channels, loaded by the page when a game
+  // starts (frontend query of backend loto_bans). Keyed case-insensitively
+  // as `server/channel/display_name`.
+  bannedKeys = $state<SvelteSet<string>>(new SvelteSet())
+
+  setBans(bans: { source_server: string; source_channel: string; display_name: string }[]) {
+    this.bannedKeys = new SvelteSet(
+      bans.map((b) => banKey(b.source_server, b.source_channel, b.display_name)),
+    )
+    // Drop already-collected tickets from newly banned users.
+    if (this.remoteTickets.length > 0) {
+      this.remoteTickets = this.remoteTickets.filter(
+        (t) => !this.isBanned(t.source.server, t.source.channel, t.owner_name),
+      )
+    }
+  }
+
+  isBanned(server: string, channel: string, displayName: string): boolean {
+    return this.bannedKeys.has(banKey(server, channel, displayName))
+  }
 
   // Set by the page: persists a frontend-created ticket to the backend game.
   // Fire-and-forget; the list subscription echoes the stored row back and
@@ -349,7 +380,12 @@ export class LotoStore {
   private pendingTicketIds = new Set<string>()
 
   setRemoteTickets(tickets: LotoTicket[]) {
-    const incomingOwners = new Set(tickets.map((t) => t.owner_id))
+    // Ignore banned users even if the backend echo still carries them
+    // (e.g. banned after the ticket was stored, before banUser deleted it).
+    const visible = tickets.filter(
+      (t) => !this.isBanned(t.source.server, t.source.channel, t.owner_name),
+    )
+    const incomingOwners = new Set(visible.map((t) => t.owner_id))
     const keptPending: LotoTicket[] = []
     for (const t of this.remoteTickets) {
       if (this.pendingTicketIds.has(t.id)) {
@@ -363,10 +399,10 @@ export class LotoStore {
     }
     // Backend is the source of truth; unconfirmed optimistic rows are kept
     // on top so they stay visible until the echo replaces them.
-    this.remoteTickets = [...keptPending, ...tickets]
+    this.remoteTickets = [...keptPending, ...visible]
     // Keep user cards working for backend tickets even before the author
     // chats again (display polling only covers live messages).
-    for (const t of tickets) {
+    for (const t of visible) {
       if (!this.usersById.has(t.owner_id)) {
         this.usersById.set(t.owner_id, {
           id: t.owner_id,
@@ -532,6 +568,8 @@ export class LotoStore {
         : fallbackId
 
     const saveOptimistic = (t: LotoTicket) => {
+      // Banned users never get tickets, even on resend.
+      if (this.isBanned(t.source.server, t.source.channel, t.owner_name)) return
       this.pendingTicketIds.add(t.id)
       // One ticket per owner: last message wins.
       this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
@@ -549,6 +587,7 @@ export class LotoStore {
     if (isMessageFromVkBot(msg)) {
       const mention = msg.vkFields?.mentions[0] as VkMention | undefined
       if (mention) {
+        if (this.isBanned(msg.source.server, msg.source.channel, mention.displayName)) return
         user.id = mention.id.toString() as UserId
         user.displayName = mention.displayName
         const existingUser = this.usersById.get(user.id)
@@ -565,6 +604,7 @@ export class LotoStore {
       return
     }
     if (isMessageHighlightedOnTwitch(msg)) {
+      if (this.isBanned(msg.source.server, msg.source.channel, user.displayName)) return
       ticket.type = 'points'
       ticket.owner_id = ownerIdFor(user.displayName, user.id) as UserId
       this.usersById.set(ticket.owner_id, user)
@@ -572,6 +612,7 @@ export class LotoStore {
       return
     }
     // regular ticket
+    if (this.isBanned(msg.source.server, msg.source.channel, user.displayName)) return
     ticket.owner_id = ownerIdFor(user.displayName, user.id) as UserId
     this.usersById.set(ticket.owner_id, user)
     saveOptimistic(ticket)
@@ -599,6 +640,23 @@ export class LotoStore {
     this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
     this.ticketRemover?.(ticketId as string)
     // Deleting the reported winner clears the backend field.
+    if (ticketId === this.lastReportedWinnerId) {
+      this.lastReportedWinnerId = null
+      this.winnerReporter?.(null)
+    }
+  }
+
+  banTicket = (ticketId: LotoTicketId) => {
+    const ticket = this.remoteTickets.find((t) => t.id === ticketId)
+    if (ticket) {
+      // Block re-registration immediately, even before the ban list reloads.
+      this.bannedKeys.add(banKey(ticket.source.server, ticket.source.channel, ticket.owner_name))
+    }
+    this.openedChats.delete(ticketId)
+    this.pendingTicketIds.delete(ticketId as string)
+    this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
+    this.banSaver?.(ticketId as string)
+    // Banning the reported winner clears the backend field.
     if (ticketId === this.lastReportedWinnerId) {
       this.lastReportedWinnerId = null
       this.winnerReporter?.(null)

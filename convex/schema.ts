@@ -171,4 +171,22 @@ export default defineSchema({
     .index('by_game', ['game_id'])
     .index('by_game_owner', ['game_id', 'owner_id'])
     .index('by_created', ['created_at']),
+
+  // Loto ban list: display_name + stream channel, expires after 7 days.
+  // Evicted by cron. Key for matching is
+  // (channel_lower, display_name_lower), case-insensitive.
+  loto_bans: defineTable({
+    display_name: v.string(),
+    display_name_lower: v.string(),
+    stream_channel: v.string(),
+    channel_lower: v.string(),
+    source_server: v.string(),
+    source_channel: v.string(),
+    created_at: v.number(),
+    expires_at: v.number(),
+    banned_by_session: v.optional(v.string()),
+  })
+    .index('by_channel', ['channel_lower'])
+    .index('by_channel_user', ['channel_lower', 'display_name_lower'])
+    .index('by_expiry', ['expires_at']),
 })

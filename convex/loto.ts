@@ -2,6 +2,7 @@ import { mutation, query } from './_generated/server'
 import { v } from 'convex/values'
 import type { Id } from './_generated/dataModel'
 import { streamerOwnerId, toFrontendTicket, type FrontendTicket } from './lotoLib'
+import { isBanned } from './lotoBans'
 import { compareChannelPriority } from './authLib'
 import { parseIdentity } from './userIdentity'
 
@@ -145,6 +146,9 @@ export const addStreamerTicket = mutation({
       source_channel: channel,
       created_at: Date.now(),
     }
+    if (await isBanned(ctx, ticket.source_server, ticket.source_channel, ticket.owner_name)) {
+      throw new Error('User is banned')
+    }
     const existing = await ctx.db
       .query('loto_tickets')
       .withIndex('by_game_owner', (q) =>
@@ -204,6 +208,9 @@ export const addTicket = mutation({
     if (args.value.length === 0 || args.value.length > 99) throw new Error('Invalid value')
     for (const n of args.value) {
       if (!/^\d{2}$/.test(n)) throw new Error('Invalid number')
+    }
+    if (await isBanned(ctx, args.source_server, args.source_channel, args.owner_name)) {
+      throw new Error('User is banned')
     }
     const draft = {
       owner_id: args.owner_id,

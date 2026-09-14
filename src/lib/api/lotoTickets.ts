@@ -48,6 +48,18 @@ export async function removeLotoTicket(
   })
 }
 
+// Bans the ticket owner (display_name + stream channel, 7-day expiry)
+// and deletes the ticket. Only the game owner may call it.
+export async function banLotoUser(
+  client: ConvexClient,
+  ticket_id: LotoTicketId,
+): Promise<{ banned: string; stream_channel: string; deleted: LotoTicketId }> {
+  return await client.mutation(api.lotoBans.banUser, {
+    ticket_id,
+    session_id: requireSession(),
+  })
+}
+
 export async function pushDrawnNumber(
   client: ConvexClient,
   game_id: LotoGameId,

@@ -7,9 +7,10 @@
 
   type Props = {
     ticket: LotoTicket
+    canBan?: boolean
   }
 
-  const { ticket }: Props = $props()
+  const { ticket, canBan = false }: Props = $props()
 
   const chatStore = getChatStore()
   const lotoStore = getLotoStore()
@@ -46,7 +47,25 @@
       </div>
     {/each}
   </div>
-  <div class="mt-4 flex justify-end">
+  <div class="mt-4 flex justify-end gap-2">
+    {#if canBan}
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={() => {
+              lotoStore.banTicket(ticket.id)
+            }}
+          >
+            Бан
+          </Button>
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          <p>Забанить на 7 дней и удалить билет</p>
+        </Tooltip.Content>
+      </Tooltip.Root>
+    {/if}
     <Tooltip.Root>
       <Tooltip.Trigger>
         <Button

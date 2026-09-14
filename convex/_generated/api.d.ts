@@ -14,6 +14,7 @@ import type * as chatService from "../chatService.js";
 import type * as crons from "../crons.js";
 import type * as frontendLogs from "../frontendLogs.js";
 import type * as loto from "../loto.js";
+import type * as lotoBans from "../lotoBans.js";
 import type * as lotoLib from "../lotoLib.js";
 import type * as lotoWinners from "../lotoWinners.js";
 import type * as maintenance from "../maintenance.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   frontendLogs: typeof frontendLogs;
   loto: typeof loto;
+  lotoBans: typeof lotoBans;
   lotoLib: typeof lotoLib;
   lotoWinners: typeof lotoWinners;
   maintenance: typeof maintenance;

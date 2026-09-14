@@ -3,6 +3,9 @@ import type { Doc } from './_generated/dataModel'
 // Tickets/games older than this are evicted by cron.
 export const LOTO_TTL_MS = 24 * 60 * 60 * 1000
 
+// Bans expire after this; evicted by cron.
+export const LOTO_BAN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
 // A game older than this with zero tickets is considered stale: its tickets
 // have aged out (or it never got any) and the frontend auto-rotates to a
 // fresh game on open. Kept below LOTO_TTL_MS so an active game never loses

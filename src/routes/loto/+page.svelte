@@ -31,6 +31,7 @@
     pushDrawnNumber,
     setLotoWinner,
     addStreamerTicket,
+    banLotoUser,
   } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
@@ -39,6 +40,7 @@
   import BgPattern5 from '$lib/components/common/BgPattern5.svelte'
   import LotoTicketsSync from '$lib/components/loto/LotoTicketsSync.svelte'
   import LotoGameSync from '$lib/components/loto/LotoGameSync.svelte'
+  import LotoBansSync from '$lib/components/loto/LotoBansSync.svelte'
   import { NumberToFancyName } from '$lib/components/loto/utils'
   import TicketPanel from '$lib/components/loto/TicketPanel.svelte'
   import { AuthStore } from '$lib/stores/authStore.svelte'
@@ -62,6 +64,9 @@
   }
   lotoStore.ticketRemover = (ticketId: string) => {
     removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
+  }
+  lotoStore.banSaver = (ticketId: string) => {
+    banLotoUser(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
   }
   lotoStore.ticketSaver = (draft) => {
     if (!lotoStore.gameId) return
@@ -184,6 +189,14 @@
     }
   }
 
+  // Per-ticket owner gate for the ban button: this session must have proved
+  // ownership of the ticket's own source channel (fail closed).
+  function isOwnerFor(ticket: { source: { server: string; channel: string } }): boolean {
+    const want = `${ticket.source.server}/${ticket.source.channel}`.toLowerCase()
+    const key = store.connectedConnections.find((c) => c.toLowerCase() === want)
+    return key ? (authStore.connectionInfo[key]?.authenticated ?? false) : false
+  }
+
   // Generates the streamer ticket for the main channel (backend picks it
   // by platform priority). Upserts, so pressing again re-rolls.
   async function addStreamer() {
@@ -290,6 +303,7 @@
   <LotoTicketsSync gameId={lotoStore.gameId} />
   <LotoGameSync gameId={lotoStore.gameId} />
 {/if}
+<LotoBansSync channels={gameChannels} />
 {#if lotoStore.backendSyncing}
   <div class="dark relative flex flex-col items-center justify-center overflow-hidden p-6">
     <div class="bg-card2 animate-pulse rounded-xl border border-primary/60 p-8 text-2xl">
@@ -527,7 +541,7 @@
               </button>
             </div>
             {#if lotoStore.openedChats.has(ticket.id)}
-              <TicketPanel {ticket} />
+              <TicketPanel {ticket} canBan={isOwnerFor(ticket)} />
             {/if}
           </div>
         {/each}
