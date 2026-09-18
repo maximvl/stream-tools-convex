@@ -62,7 +62,7 @@
           </Button>
         </Tooltip.Trigger>
         <Tooltip.Content>
-          <p>Забанить на 7 дней и удалить билет</p>
+          <p>Забанить в лото на 7 дней и удалить билет</p>
         </Tooltip.Content>
       </Tooltip.Root>
     {/if}

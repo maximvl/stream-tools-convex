@@ -40,7 +40,7 @@ export const makeMessage = (user_id?: string): ChatMessage => {
 
   return {
     id: `${user_id}-${randomUUID}`,
-    text: sample(['+игра']),
+    text: sample(['+лото']),
     timestampMs: new Date().getTime(),
     // Math.round(
     // new Date().getTime()
