@@ -22,7 +22,7 @@
 
 <Dialog.Root bind:open>
   <Dialog.Trigger>
-    <Button variant="outline"><Settings /> Настройки</Button>
+    <Button variant="outline"><Settings />Настройки</Button>
   </Dialog.Trigger>
   <Dialog.Content class="bg-card2">
     <Dialog.Header>Настройки турнира</Dialog.Header>

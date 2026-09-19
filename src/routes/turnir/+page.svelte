@@ -23,7 +23,7 @@
 <div class="dark flex min-h-screen flex-col items-center p-8">
   <Nav />
 
-  <div class="mb-8 flex w-full max-w-6xl items-center">
+  <div class="mb-8 flex w-full max-w-7xl items-center">
     <div class="w-[250px]">
       <ConnectionDialog />
     </div>
@@ -33,23 +33,9 @@
     <div class="w-[250px]"></div>
   </div>
 
-  <div class="grid w-full max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[400px_1fr]">
+  <div class="grid w-full max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
     <div class="flex flex-col gap-4 rounded-3xl border bg-card p-6">
       <div class="flex flex-wrap gap-2">
-        <Button
-          variant="destructive"
-          disabled={store.turnirState === 'EditCandidates'}
-          onclick={() => store.restartToEdit()}
-        >
-          <RotateCcw /> Рестарт
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={!store.isRoundActive}
-          onclick={() => (showSkipDialog = true)}
-        >
-          <SkipForward /> Скипнуть раунд
-        </Button>
         <Button
           class="bg-green-600 hover:bg-green-500"
           disabled={store.nonEmptyItems.length === 0 ||
@@ -58,6 +44,21 @@
           onclick={() => store.startTurnir()}
         >
           <Play /> Запуск
+        </Button>
+
+        <Button
+          variant="secondary"
+          disabled={!store.isRoundActive}
+          onclick={() => (showSkipDialog = true)}
+        >
+          <SkipForward /> Скип раунда
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={store.turnirState === 'EditCandidates'}
+          onclick={() => store.restartToEdit()}
+        >
+          <RotateCcw /> Рестарт
         </Button>
         <TurnirSettingsDialog {store} />
       </div>
