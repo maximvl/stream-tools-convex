@@ -257,9 +257,9 @@
 
 <div class="flex flex-col items-center justify-center">
   {#if currentItem}
-    <h2 class="m-0 flex items-center justify-center text-xl font-bold">
-      <ItemTitle item={currentItem} />
-    </h2>
+    <div class="m-0 flex items-center justify-center font-bold">
+      <ItemTitle item={currentItem} fontSize="24px" />
+    </div>
   {/if}
   {#if isFinished}
     <Button variant={confirmVariant} class="m-2" onclick={confirmWinner}>{confirmLabel}</Button>

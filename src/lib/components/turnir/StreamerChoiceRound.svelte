@@ -13,7 +13,7 @@
 
 <div class="flex flex-col items-center">
   <InfoPanel>Стример выбирает кто вылетит</InfoPanel>
-  <div class="mt-2 flex w-fit flex-col gap-4 text-left">
+  <div class="mt-4 flex w-fit flex-col gap-4 text-left">
     {#each items as item (item.id)}
       <SelectItem {item} selected={false} highlightOnHover onItemClick={onItemElimination} />
     {/each}

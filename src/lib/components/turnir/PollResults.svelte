@@ -58,7 +58,7 @@
       </InfoPanel>
     {/if}
   </div>
-  <div class="mt-2 flex justify-center">
+  <div class="mt-4 flex justify-center">
     <div
       class="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5"
     >

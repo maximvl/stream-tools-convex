@@ -15,7 +15,7 @@
   <InfoPanel>
     <p>Случайный вариант получит одноразовую защиту от вылета</p>
   </InfoPanel>
-  <div class="mt-2">
+  <div class="mt-4">
     <Wheel
       {items}
       onItemWinning={onItemProtection}

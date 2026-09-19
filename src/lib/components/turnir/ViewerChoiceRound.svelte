@@ -43,7 +43,7 @@
 
 <div class="inline-block w-full items-center pl-4">
   <PollResults {items} votes={voting?.votes ?? []} {onItemElimination} {time} />
-  <div class="mt-2">
+  <div class="mt-4">
     <VotesLog
       votes={voting?.voteMessages ?? []}
       {items}

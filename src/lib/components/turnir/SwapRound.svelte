@@ -17,7 +17,7 @@
       Случайный вариант секретно меняется с другим {'\n'}Подмена вскроется когда один из них вылетит
     </p>
   </InfoPanel>
-  <div class="mt-2">
+  <div class="mt-4">
     <Wheel {items} onItemWinning={onItemSwap} confirmLabel="Подменить" confirmVariant="secondary" />
   </div>
 </div>
