@@ -18,6 +18,8 @@
 
   type Phase = 'voting' | 'show_results'
 
+  const STOP_LOCK_SECONDS = 15
+
   const chatStore = getChatStore()
   const musicStore = getMusicStore()
 
@@ -29,6 +31,8 @@
   let voting = $state<TurnirVoting | null>(null)
   let phase = $state<Phase>('voting')
   let time = $state(0)
+
+  let stopLocked = $derived(time < STOP_LOCK_SECONDS)
 
   $effect(() => {
     const next = new TurnirVoting(items, subscriberOnly)
@@ -60,7 +64,9 @@
 
 <div>
   {#if phase === 'voting'}
-    <Button variant="destructive" onclick={stopVoting}>Закончить</Button>
+    <Button variant="destructive" onclick={stopVoting} disabled={stopLocked}>
+      Закончить{stopLocked ? ` (блокировка на ${STOP_LOCK_SECONDS - time} секунд)` : ''}
+    </Button>
     <div class="mt-4">
       <PollResults {items} votes={voting?.votes ?? []} hideResults {time} />
     </div>
