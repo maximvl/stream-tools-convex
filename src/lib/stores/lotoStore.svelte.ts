@@ -165,10 +165,28 @@ export class LotoStore {
   }
 
   // Set by the page: persists a frontend-created ticket to the backend game.
-  // Fire-and-forget; the list subscription echoes the stored row back and
-  // setRemoteTickets reconciles it by owner_id (backend ids replace the
-  // optimistic crypto.randomUUID ids).
+  // Fire-and-forget cold backup for refresh restores; the live list never
+  // re-syncs, so no confirmation comes back.
   ticketSaver: ((draft: LotoTicketDraft) => void) | null = null
+
+  // Inserts a backend-created ticket (e.g. the streamer-ticket mutation
+  // response) directly into the live list: with no live re-sync, the
+  // mutation response is the only way the row appears locally. Replaces
+  // any same-owner row, like the echo reconciliation did.
+  upsertConfirmedTicket(t: LotoTicket) {
+    for (const o of this.remoteTickets) {
+      if (o.owner_id === t.owner_id && o.id !== t.id) {
+        this.pendingTicketIds.delete(o.id)
+      }
+    }
+    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
+    if (!this.usersById.has(t.owner_id)) {
+      this.usersById.set(t.owner_id, {
+        id: t.owner_id,
+        displayName: t.owner_name,
+      } as ChatUser)
+    }
+  }
 
   // Adds a ticket to the local state and queues it for backend persistence
   // (via ticketSaver, a no-op when no backend game is attached). One ticket
@@ -325,8 +343,12 @@ export class LotoStore {
       // Report derived winner changes to the backend exactly once per id.
       // Skipped while tickets haven't loaded yet: on reload the derived
       // winner is briefly null and must not clear a stored backend winner.
+      // Also skipped for optimistic rows created live (temp ids have no
+      // backend counterpart — saves are fire-and-forget with no live
+      // re-sync); restored rows already carry real backend ids.
       if (this.remoteTickets.length === 0) return
       const winnerId = this.winner?.id ?? null
+      if (winnerId !== null && this.pendingTicketIds.has(winnerId)) return
       if (winnerId !== this.lastReportedWinnerId) {
         this.lastReportedWinnerId = winnerId
         untrack(() => {
@@ -701,12 +723,18 @@ export class LotoStore {
   }
 
   deleteTicket = (ticketId: LotoTicketId) => {
+    const key = ticketId as string
+    const wasPending = this.pendingTicketIds.has(key)
     this.openedChats.delete(ticketId)
-    this.pendingTicketIds.delete(ticketId as string)
+    this.pendingTicketIds.delete(key)
     this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
-    this.ticketRemover?.(ticketId as string)
+    // Only restored rows (whose local id already is the backend id) exist
+    // on the backend under a known id — optimistic rows are fire-and-forget
+    // saves with no id mapping, so there is nothing addressable to delete.
+    const persistedId = !wasPending ? key : null
+    if (persistedId) this.ticketRemover?.(persistedId)
     // Deleting the reported winner clears the backend field.
-    if (ticketId === this.lastReportedWinnerId) {
+    if (persistedId !== null && persistedId === this.lastReportedWinnerId) {
       this.lastReportedWinnerId = null
       this.winnerReporter?.(null)
     }
@@ -718,12 +746,15 @@ export class LotoStore {
       // Block re-registration immediately, even before the ban list reloads.
       this.bannedKeys.add(banKey(ticket.source.server, ticket.source.channel, ticket.owner_name))
     }
+    const key = ticketId as string
+    const wasPending = this.pendingTicketIds.has(key)
     this.openedChats.delete(ticketId)
-    this.pendingTicketIds.delete(ticketId as string)
+    this.pendingTicketIds.delete(key)
     this.remoteTickets = this.remoteTickets.filter((t) => t.id !== ticketId)
-    this.banSaver?.(ticketId as string)
+    const persistedId = !wasPending ? key : null
+    if (persistedId) this.banSaver?.(persistedId)
     // Banning the reported winner clears the backend field.
-    if (ticketId === this.lastReportedWinnerId) {
+    if (persistedId !== null && persistedId === this.lastReportedWinnerId) {
       this.lastReportedWinnerId = null
       this.winnerReporter?.(null)
     }

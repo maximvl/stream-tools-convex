@@ -23,6 +23,7 @@
   import type { Id } from '../../../convex/_generated/dataModel.js'
   import { getSessionId, SESSION_CHANGE_EVENT } from '$lib/session'
   import type { ConnKey } from '$lib/stores/chatMessagesStore.svelte'
+  import type { LotoTicket as LotoTicketData } from '$lib/components/loto/types'
   import { LocalStore } from '$lib/stores/localStore.svelte'
   import {
     addLotoTicket,
@@ -334,7 +335,14 @@
     }
     addingStreamer = true
     try {
-      await addStreamerTicket(convex, lotoStore.gameId as Id<'loto_games'>, pollParams())
+      // No live re-sync: insert the mutation response directly, otherwise
+      // the generated ticket would never appear locally.
+      const { ticket } = await addStreamerTicket(
+        convex,
+        lotoStore.gameId as Id<'loto_games'>,
+        pollParams(),
+      )
+      lotoStore.upsertConfirmedTicket(ticket as unknown as LotoTicketData)
     } catch (e) {
       console.error(e)
     } finally {
@@ -342,11 +350,10 @@
     }
   }
 
-  // Live backend state for the active game instance (subscriptions mount
-  // only once a game exists — this convex-svelte version has no 'skip').
   // Tickets are created in the frontend from its chat polling and saved via
-  // ticketSaver; the subscriptions below echo the stored rows back (source
-  // of truth for reloads and second tabs).
+  // ticketSaver (cold backup for refresh restores); the ticket subscription
+  // below applies only the first payload per game and ignores later live
+  // updates. Draws still sync live (source of truth for all tabs).
 
   $effect(() => {
     untrack(() => {
