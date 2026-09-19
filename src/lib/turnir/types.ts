@@ -32,8 +32,13 @@ export const ClassicRoundTypes: RoundType[] = [
   'ViewerChoice',
 ]
 
-/** Bonus rounds currently implemented in Svelte (Protection, Swap). */
-export const ImplementedBonusRounds: RoundType[] = ['Protection', 'Swap']
+/** Bonus rounds currently implemented in Svelte. */
+export const ImplementedBonusRounds: RoundType[] = [
+  'Protection',
+  'Swap',
+  'ClosestVotes',
+  'Resurrection',
+]
 
 export const OneTimeRounds: RoundType[] = [
   'Protection',

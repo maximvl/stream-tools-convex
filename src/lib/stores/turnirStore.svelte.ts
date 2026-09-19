@@ -236,6 +236,18 @@ export class TurnirStore {
     this.advanceAfterChange()
   }
 
+  /** Resurrected item returns to play (keeps its id, flags reset except resurrected). */
+  resurrectItem(id: string) {
+    if (!this.isRoundActive) return
+    const item = this.eliminatedItems.find((item) => item.id === id)
+    if (!item) return
+    item.isResurrected = true
+    item.status = 'Active'
+    item.eliminationRound = undefined
+    item.eliminationType = undefined
+    this.advanceAfterChange()
+  }
+
   /** Swap round wheel winner secretly swaps with a random other item. */
   applySwap(id: string) {
     if (!this.isRoundActive) return
@@ -304,11 +316,21 @@ export class TurnirStore {
 
   private pickNextRoundType(): RoundType | undefined {
     // One-time bonus rounds are removed from the pool once used.
-    // TODO(step 3): forced overrides for Deal / Resurrection / DealReturn
+    // TODO(step 3): forced overrides for Deal / DealReturn
     // (highest priority picks based on active/eliminated counts).
     let options = this.activeRounds.filter((round) => !this.usedOneTimeRounds.includes(round))
     if (this.noRoundRepeat && options.length > 1 && this.lastNonBonusRoundType) {
       options = options.filter((round) => round !== this.lastNonBonusRoundType)
+    }
+    // Mid-tournament comeback: once at least half the items are out,
+    // force the Resurrection round (if enabled and unused).
+    if (
+      options.includes('Resurrection') &&
+      this.eliminatedItems.length >= this.activeItems.length
+    ) {
+      options = ['Resurrection']
+    } else {
+      options = options.filter((round) => round !== 'Resurrection')
     }
     return pickRandom(options)
   }

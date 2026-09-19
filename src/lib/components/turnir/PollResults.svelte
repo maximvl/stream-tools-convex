@@ -9,9 +9,19 @@
     onItemElimination?: (id: string) => void
     time?: number
     showInfo?: boolean
+    hideResults?: boolean
+    winnerCheck?: (votes: number) => number
   }
 
-  let { items, votes, onItemElimination, time, showInfo = true }: Props = $props()
+  let {
+    items,
+    votes,
+    onItemElimination,
+    time,
+    showInfo = true,
+    hideResults = false,
+    winnerCheck = (v: number) => v,
+  }: Props = $props()
 
   let timePassed = $derived.by(() => {
     if (time === undefined) return ''
@@ -34,18 +44,17 @@
   let totalVotes = $derived(votes.length)
 
   let winningIds = $derived.by(() => {
-    const values = Object.values(votesByOption)
-    if (values.length === 0) return [] as string[]
-    const max = Math.max(...values)
-    if (max === 0) return [] as string[]
-    return Object.keys(votesByOption).filter((id) => votesByOption[id] === max)
+    const ids = Object.keys(votesByOption)
+    if (ids.length === 0 || totalVotes === 0) return [] as string[]
+    const best = Math.max(...ids.map((id) => winnerCheck(votesByOption[id] ?? 0)))
+    return ids.filter((id) => winnerCheck(votesByOption[id] ?? 0) === best)
   })
 </script>
 
 <div>
   <div class="grid justify-center text-center">
     <h2 class="m-0 text-xl font-bold">
-      Результаты голосования ({totalVotes})
+      Результаты голосования {hideResults ? 'скрыты' : ''} ({totalVotes})
       {timePassed}
     </h2>
     {#if showInfo}
@@ -63,9 +72,9 @@
       class="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5"
     >
       {#each items as item (item.id)}
-        {@const highlight = totalVotes > 0 && winningIds.includes(item.id)}
+        {@const highlight = totalVotes > 0 && !hideResults && winningIds.includes(item.id)}
         {@const currentVotes = votesByOption[item.id] ?? 0}
-        {@const pct = totalVotes > 0 ? (currentVotes / totalVotes) * 100 : 0}
+        {@const pct = totalVotes > 0 && !hideResults ? (currentVotes / totalVotes) * 100 : 0}
         <SelectItem
           {item}
           selected={highlight}
@@ -74,7 +83,7 @@
           onItemClick={(id: string) => onItemElimination?.(id)}
         />
         <div class="text-lg leading-none">
-          {currentVotes}
+          {hideResults ? '?' : currentVotes}
         </div>
       {/each}
     </div>

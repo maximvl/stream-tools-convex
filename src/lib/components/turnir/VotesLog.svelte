@@ -7,11 +7,16 @@
     votes: ChatMessageWithSource[]
     items: Item[]
     isFinished: boolean
+    hideVotes?: boolean
+    /** Preposition in "голосует <verb> <id>": 'против' (elimination) or 'за' (resurrection). Empty = none. */
+    voteVerb?: string
   }
 
-  let { votes, items, isFinished }: Props = $props()
+  let { votes, items, isFinished, hideVotes = false, voteVerb = 'против' }: Props = $props()
 
-  let showLogs = $state(true)
+  // hideVotes is a static mount-time flag (hidden voting phases), never toggled later.
+  // svelte-ignore state_referenced_locally -- intentionally capturing the initial value
+  let showLogs = $state(!hideVotes)
   let scrollable: HTMLDivElement | null = $state(null)
 
   let itemNameMap = $derived.by(() => {
@@ -41,9 +46,12 @@
   {#if showLogs}
     <div bind:this={scrollable} class="m-1 h-75 overflow-scroll rounded-lg border">
       {#each votes as vote (vote.id)}
+        {@const optionId = vote.text.trim()}
         <span class="m-1 block text-left text-sm">
-          {formatTime(vote.timestampMs)}: {vote.user.displayName} голосует против {vote.text.trim()}
-          ({itemNameMap[vote.text.trim()] ?? '?'})
+          {formatTime(vote.timestampMs)}: {vote.user.displayName} голосует{voteVerb
+            ? ` ${voteVerb}`
+            : ''}
+          {optionId} ({itemNameMap[optionId] ?? '?'})
         </span>
       {/each}
       {#if isFinished}

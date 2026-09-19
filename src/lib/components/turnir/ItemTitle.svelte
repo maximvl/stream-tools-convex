@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { HeartPlus } from '@lucide/svelte'
   import { cn } from '$lib/utils.js'
   import type { Item } from '$lib/turnir/types'
 
@@ -23,7 +24,9 @@
     <span class="mr-1 shrink-0 text-amber-500" title="Подменён">⇄</span>
   {/if}
   {#if item.isResurrected}
-    <span class="mr-1 shrink-0 text-white" title="Воскрешён">✚</span>
+    <span class="mr-1 inline-flex shrink-0 text-white" title="Воскрешён">
+      <HeartPlus class="h-[1em] w-[1em]" />
+    </span>
   {/if}
   {#if item.hasDeal}
     <span class="mr-1 shrink-0 text-muted-foreground" title="Счастливый билетик">🎲</span>

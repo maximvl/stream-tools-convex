@@ -110,9 +110,11 @@
             <RoundContent
               roundType={store.currentRoundType}
               activeItems={store.activeItems}
+              eliminatedItems={store.eliminatedItems}
               onItemElimination={(id) => store.eliminateItem(id)}
               onItemProtection={(id) => store.protectItem(id)}
               onItemSwap={(id) => store.applySwap(id)}
+              onItemResurrection={(id) => store.resurrectItem(id)}
               subscriberOnly={store.subscriberOnly}
             />
           {/key}
