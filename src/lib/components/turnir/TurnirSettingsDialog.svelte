@@ -7,6 +7,7 @@
   import {
     ClassicRoundTypes,
     ImplementedBonusRounds,
+    OneTimeRounds,
     RoundTypeNames,
     RoundTypeTooltip,
   } from '$lib/turnir/types'
@@ -19,6 +20,13 @@
   let { store }: Props = $props()
 
   let open = $state(false)
+
+  // ClosestVotes ("Стример против Чата") is repeatable, unlike the other
+  // bonus rounds which fire once per tournament.
+  const repeatableBonusRounds = ImplementedBonusRounds.filter(
+    (round) => !OneTimeRounds.includes(round),
+  )
+  const oneTimeBonusRounds = ImplementedBonusRounds.filter((round) => OneTimeRounds.includes(round))
 
   function resetSettings() {
     store.settings.value = defaultTurnirSettings()
@@ -70,8 +78,26 @@
         {/each}
       </div>
       <div class="flex flex-col gap-2">
+        <p class="text-sm font-bold">Бонусные раунды</p>
+        {#each repeatableBonusRounds as roundType (roundType)}
+          <div class="flex items-center gap-2" title={RoundTypeTooltip[roundType] ?? ''}>
+            <Checkbox
+              id={`turnir-round-${roundType}`}
+              checked={store.settings.value.roundTypes[roundType]}
+              onCheckedChange={(v: boolean) => {
+                store.settings.value.roundTypes[roundType] = v
+              }}
+              disabled={!store.canEditItems}
+            />
+            <Label for={`turnir-round-${roundType}`} class="cursor-pointer">
+              {RoundTypeNames[roundType]}
+            </Label>
+          </div>
+        {/each}
+      </div>
+      <div class="flex flex-col gap-2">
         <p class="text-sm font-bold">Бонусные раунды (один раз за турнир)</p>
-        {#each ImplementedBonusRounds as roundType (roundType)}
+        {#each oneTimeBonusRounds as roundType (roundType)}
           <div class="flex items-center gap-2" title={RoundTypeTooltip[roundType] ?? ''}>
             <Checkbox
               id={`turnir-round-${roundType}`}
