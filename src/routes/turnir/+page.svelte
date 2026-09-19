@@ -111,10 +111,13 @@
               roundType={store.currentRoundType}
               activeItems={store.activeItems}
               eliminatedItems={store.eliminatedItems}
+              dealItem={store.dealItem}
               onItemElimination={(id) => store.eliminateItem(id)}
               onItemProtection={(id) => store.protectItem(id)}
               onItemSwap={(id) => store.applySwap(id)}
               onItemResurrection={(id) => store.resurrectItem(id)}
+              onItemDeal={(id) => store.applyDeal(id)}
+              onDealReturn={() => store.returnDealItem()}
               subscriberOnly={store.subscriberOnly}
             />
           {/key}

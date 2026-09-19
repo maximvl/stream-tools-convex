@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Item, RoundType } from '$lib/turnir/types'
   import ClosestVotesRound from './ClosestVotesRound.svelte'
+  import DealReturn from './DealReturn.svelte'
+  import DealRound from './DealRound.svelte'
   import ProtectionRound from './ProtectionRound.svelte'
   import RandomEliminationRound from './RandomEliminationRound.svelte'
   import ResurrectionRound from './ResurrectionRound.svelte'
@@ -12,10 +14,13 @@
     roundType: RoundType
     activeItems: Item[]
     eliminatedItems: Item[]
+    dealItem: Item | undefined
     onItemElimination: (id: string) => void
     onItemProtection: (id: string) => void
     onItemSwap: (id: string) => void
     onItemResurrection: (id: string) => void
+    onItemDeal: (id: string) => void
+    onDealReturn: () => void
     subscriberOnly: boolean
   }
 
@@ -23,10 +28,13 @@
     roundType,
     activeItems,
     eliminatedItems,
+    dealItem,
     onItemElimination,
     onItemProtection,
     onItemSwap,
     onItemResurrection,
+    onItemDeal,
+    onDealReturn,
     subscriberOnly,
   }: Props = $props()
 </script>
@@ -45,4 +53,8 @@
   <ClosestVotesRound items={activeItems} {onItemElimination} {subscriberOnly} />
 {:else if roundType === 'Resurrection'}
   <ResurrectionRound {activeItems} {eliminatedItems} {onItemResurrection} {subscriberOnly} />
+{:else if roundType === 'Deal'}
+  <DealRound items={activeItems} {onItemDeal} />
+{:else if roundType === 'DealReturn' && dealItem}
+  <DealReturn {dealItem} onItemReturn={onDealReturn} {onItemElimination} />
 {/if}

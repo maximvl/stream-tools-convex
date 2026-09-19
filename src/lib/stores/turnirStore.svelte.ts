@@ -113,6 +113,7 @@ export class TurnirStore {
   eliminatedItems = $derived.by(() =>
     this.nonEmptyItems.filter((item) => item.status === 'Eliminated'),
   )
+  dealItem = $derived.by(() => this.nonEmptyItems.find((item) => item.status === 'Excluded'))
   activeRounds = $derived.by(() =>
     [...ClassicRoundTypes, ...ImplementedBonusRounds].filter(
       (round) => this.settings.value.roundTypes[round],
@@ -197,6 +198,11 @@ export class TurnirStore {
 
   eliminateItem(id: string) {
     if (!this.isRoundActive || !this.currentRoundType) return
+    const deal = this.dealItem
+    if (deal && deal.id === id) {
+      this.eliminateNow(deal)
+      return
+    }
     const item = this.activeItems.find((item) => item.id === id)
     if (!item) return
     if (item.isProtected) {
@@ -259,6 +265,27 @@ export class TurnirStore {
     this.advanceAfterChange()
   }
 
+  /** Deal round pick: item sits out with a lucky ticket until DealReturn. */
+  applyDeal(id: string) {
+    if (!this.isRoundActive) return
+    const item = this.activeItems.find((item) => item.id === id)
+    if (!item) return
+    item.hasDeal = true
+    item.status = 'Excluded'
+    this.advanceAfterChange()
+  }
+
+  /** DealReturn win: the deal item comes back into play. */
+  returnDealItem() {
+    if (!this.isRoundActive) return
+    const deal = this.dealItem
+    if (!deal) return
+    deal.status = 'Active'
+    deal.eliminationRound = undefined
+    deal.eliminationType = undefined
+    this.advanceAfterChange()
+  }
+
   /** ProtectionRemoveModal confirm: protection is consumed, no elimination. */
   resolveProtectionReveal() {
     const item = this.protectionRevealItem
@@ -315,22 +342,44 @@ export class TurnirStore {
   }
 
   private pickNextRoundType(): RoundType | undefined {
-    // One-time bonus rounds are removed from the pool once used.
-    // TODO(step 3): forced overrides for Deal / DealReturn
-    // (highest priority picks based on active/eliminated counts).
-    let options = this.activeRounds.filter((round) => !this.usedOneTimeRounds.includes(round))
+    // DealReturn has no settings toggle: like the original, it is always in the
+    // pool until used once, then removed with the other one-time rounds.
+    let options: RoundType[] = [...this.activeRounds, 'DealReturn']
+    if (this.nonEmptyItems.length < 6) {
+      options = options.filter((round) => round !== 'Deal')
+    }
+    options = options.filter((round) => !this.usedOneTimeRounds.includes(round))
     if (this.noRoundRepeat && options.length > 1 && this.lastNonBonusRoundType) {
       options = options.filter((round) => round !== this.lastNonBonusRoundType)
     }
+    const resurrectionEnabled = options.includes('Resurrection')
+    const dealEnabled = options.includes('Deal')
+    const dealReturnEnabled = options.includes('DealReturn')
+    const deal = this.dealItem
+    // The deal item pays for its ticket once eliminations catch up (or the
+    // tournament is down to 2), unless Resurrection is about to fire instead.
+    if (
+      !resurrectionEnabled &&
+      deal &&
+      dealReturnEnabled &&
+      (this.eliminatedItems.length >= this.activeItems.length || this.activeItems.length <= 2)
+    ) {
+      options = ['DealReturn']
+    } else {
+      options = options.filter((round) => round !== 'DealReturn')
+    }
     // Mid-tournament comeback: once at least half the items are out,
     // force the Resurrection round (if enabled and unused).
-    if (
-      options.includes('Resurrection') &&
-      this.eliminatedItems.length >= this.activeItems.length
-    ) {
+    if (resurrectionEnabled && this.eliminatedItems.length >= this.activeItems.length) {
       options = ['Resurrection']
     } else {
       options = options.filter((round) => round !== 'Resurrection')
+    }
+    // Deal takes priority over everything when enabled and unused.
+    if (dealEnabled) {
+      options = ['Deal']
+    } else {
+      options = options.filter((round) => round !== 'Deal')
     }
     return pickRandom(options)
   }

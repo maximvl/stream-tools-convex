@@ -38,6 +38,7 @@ export const ImplementedBonusRounds: RoundType[] = [
   'Swap',
   'ClosestVotes',
   'Resurrection',
+  'Deal',
 ]
 
 export const OneTimeRounds: RoundType[] = [

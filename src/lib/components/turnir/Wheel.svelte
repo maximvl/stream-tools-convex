@@ -4,11 +4,15 @@
   import { untrack } from 'svelte'
   import ItemTitle from './ItemTitle.svelte'
 
+  type ConfirmVariant = 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+
   type Props = {
     items: Item[]
     onItemWinning: (id: string) => void
     confirmLabel?: string
-    confirmVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+    confirmVariant?: ConfirmVariant
+    /** Per-outcome confirm button (e.g. DealReturn's return vs eliminate). */
+    getConfirmButton?: (item: Item) => { label: string; variant: ConfirmVariant }
   }
 
   let {
@@ -16,6 +20,7 @@
     onItemWinning,
     confirmLabel = 'Удалить',
     confirmVariant = 'destructive',
+    getConfirmButton,
   }: Props = $props()
 
   type WheelState = 'start' | 'acceleration' | 'constant' | 'deceleration' | 'stop'
@@ -81,6 +86,11 @@
 
   let currentItemIndex = $state(0)
   let currentItem = $derived(items[currentItemIndex])
+  let confirmButton = $derived(
+    getConfirmButton && currentItem
+      ? getConfirmButton(currentItem)
+      : { label: confirmLabel, variant: confirmVariant },
+  )
 
   function drawWheel() {
     const context = canvas?.getContext('2d')
@@ -262,7 +272,9 @@
     </div>
   {/if}
   {#if isFinished}
-    <Button variant={confirmVariant} class="m-2" onclick={confirmWinner}>{confirmLabel}</Button>
+    <Button variant={confirmButton.variant} class="m-2" onclick={confirmWinner}>
+      {confirmButton.label}
+    </Button>
   {/if}
   <div class="mt-2 flex justify-center">
     <div
