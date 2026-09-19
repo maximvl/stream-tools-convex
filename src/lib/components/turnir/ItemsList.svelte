@@ -80,12 +80,13 @@
     <div class="flex flex-col items-start gap-2">
       {#each playActive as item (item.id)}
         <div class="flex w-full items-center gap-2">
-          <div class="flex flex-1 items-center gap-2 pr-2">
-            <span class="text-sm text-muted-foreground">{item.id}.</span>
-            <span class="text-green-500"><ItemTitle {item} /></span>
+          <div class="flex min-w-0 flex-1 items-center gap-2 pr-2">
+            <span class="shrink-0 text-sm text-muted-foreground">{item.id}.</span>
+            <span class="min-w-0 flex-1 text-green-500"><ItemTitle {item} truncate /></span>
           </div>
           {#if showKPLinks && item.title}
             <a
+              class="shrink-0"
               href={`https://www.kinopoisk.ru/index.php?kp_query=${encodeURIComponent(kpQuery(item.title))}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -102,12 +103,15 @@
       <h3 class="mt-2 text-lg font-bold">Выбывшие ({playEliminated.length})</h3>
       {#each playEliminated as item (item.id)}
         <div class="flex w-full items-center gap-2">
-          <div class="flex flex-1 items-center gap-2 pr-2">
-            <span class="text-sm text-muted-foreground">{item.id}.</span>
-            <span class="text-red-400">{item.title}</span>
+          <div class="flex min-w-0 flex-1 items-center gap-2 pr-2">
+            <span class="shrink-0 text-sm text-muted-foreground">{item.id}.</span>
+            <span class="min-w-0 flex-1 truncate text-red-400" title={item.title}>
+              {item.title}
+            </span>
           </div>
           {#if showKPLinks && item.title}
             <a
+              class="shrink-0"
               href={`https://www.kinopoisk.ru/index.php?kp_query=${encodeURIComponent(kpQuery(item.title))}`}
               target="_blank"
               rel="noopener noreferrer"
