@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
   import { getChatStore } from '$lib/context'
+  import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import { TurnirVoting } from '$lib/stores/turnirVoting.svelte'
   import type { Item } from '$lib/turnir/types'
   import { untrack } from 'svelte'
@@ -18,6 +19,13 @@
   type Phase = 'voting' | 'show_results'
 
   const chatStore = getChatStore()
+  const musicStore = getMusicStore()
+
+  $effect(() => {
+    musicStore.play('deathnote')
+    return () => musicStore.stop()
+  })
+
   let voting = $state<TurnirVoting | null>(null)
   let phase = $state<Phase>('voting')
   let time = $state(0)
@@ -45,6 +53,7 @@
 
   function stopVoting() {
     voting?.finish()
+    musicStore.stop()
     phase = 'show_results'
   }
 </script>

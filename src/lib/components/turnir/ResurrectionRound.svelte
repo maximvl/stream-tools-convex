@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
+  import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import InfoPanel from './InfoPanel.svelte'
   import ResurrectionVoting from './ResurrectionVoting.svelte'
@@ -15,6 +16,13 @@
   let { activeItems, eliminatedItems, onItemResurrection, subscriberOnly }: Props = $props()
 
   type Phase = 'initial' | 'random' | 'voting'
+
+  const musicStore = getMusicStore()
+
+  $effect(() => {
+    musicStore.play('raphael')
+    return () => musicStore.stop()
+  })
 
   // Component is keyed by roundId, so local phase always starts fresh.
   let phase = $state<Phase>('initial')
@@ -42,6 +50,7 @@
     onItemWinning={onItemResurrection}
     confirmLabel="Воскресить"
     confirmVariant="default"
+    music="nightsong"
   />
 {:else}
   <ResurrectionVoting items={eliminatedItems} {onItemResurrection} {subscriberOnly} />

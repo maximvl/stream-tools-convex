@@ -1,9 +1,20 @@
 <script lang="ts">
-  import { PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCcw, SkipForward } from '@lucide/svelte'
+  import {
+    PanelLeftClose,
+    PanelLeftOpen,
+    Play,
+    Plus,
+    RotateCcw,
+    SkipForward,
+    Volume2,
+    VolumeOff,
+  } from '@lucide/svelte'
+  import { onDestroy } from 'svelte'
   import ConnectionDialog from '$lib/components/connections/ConnectionDialog.svelte'
   import Nav from '$lib/components/layout/Nav.svelte'
   import { Button } from '$lib/components/ui/button'
   import ItemsList from '$lib/components/turnir/ItemsList.svelte'
+  import MusicAudio from '$lib/components/turnir/MusicAudio.svelte'
   import ProtectionRevealDialog from '$lib/components/turnir/ProtectionRevealDialog.svelte'
   import RoundContent from '$lib/components/turnir/RoundContent.svelte'
   import SwapRevealDialog from '$lib/components/turnir/SwapRevealDialog.svelte'
@@ -11,12 +22,27 @@
   import SkipRoundDialog from '$lib/components/turnir/SkipRoundDialog.svelte'
   import TurnirSettingsDialog from '$lib/components/turnir/TurnirSettingsDialog.svelte'
   import Victory from '$lib/components/turnir/Victory.svelte'
+  import { MusicStore, setMusicStore } from '$lib/stores/musicStore.svelte'
   import { TurnirStore } from '$lib/stores/turnirStore.svelte'
 
   const store = new TurnirStore()
+  const music = new MusicStore()
+  setMusicStore(music)
 
   let showSkipDialog = $state(false)
   let panelCollapsed = $state(false)
+
+  // Victory fanfare on win, silence on restart. Round-specific tracks are
+  // started by the round components themselves on mount.
+  $effect(() => {
+    if (store.turnirState === 'Victory') {
+      music.play('victory')
+    } else if (store.turnirState === 'EditCandidates') {
+      music.stop()
+    }
+  })
+
+  onDestroy(() => music.stop())
 
   // Auto-collapse the participants panel when the tournament runs,
   // expand it back in edit mode. Manual toggles in between are untouched
@@ -40,8 +66,33 @@
     <div class="flex-1 text-center">
       <h1 class="text-4xl font-extrabold tracking-tight">Турнир</h1>
     </div>
-    <div class="w-[250px]"></div>
+    <div class="flex w-[250px] items-center justify-end gap-2">
+      <Button
+        variant="outline"
+        size="icon"
+        onclick={() => music.toggleMute()}
+        title={music.muted.value ? 'Включить звук' : 'Выключить звук'}
+      >
+        {#if music.muted.value}
+          <VolumeOff />
+        {:else}
+          <Volume2 />
+        {/if}
+      </Button>
+      <input
+        type="range"
+        aria-label="Громкость музыки"
+        title="Громкость музыки"
+        class="w-28 accent-primary"
+        min={0}
+        max={1}
+        step={0.01}
+        bind:value={music.volume.value}
+      />
+    </div>
   </div>
+
+  <MusicAudio />
 
   <div
     class="grid w-full max-w-7xl grid-cols-1 gap-6 {panelCollapsed
@@ -61,7 +112,10 @@
           <Button
             variant="destructive"
             disabled={store.turnirState === 'EditCandidates'}
-            onclick={() => store.restartToEdit()}
+            onclick={() => {
+              music.stop()
+              store.restartToEdit()
+            }}
           >
             <RotateCcw /> Рестарт
           </Button>
@@ -132,7 +186,10 @@
           <Button
             class="mt-6 bg-green-600 px-10 py-6 text-lg font-bold hover:bg-green-500"
             disabled={store.nonEmptyItems.length === 0 || store.activeRounds.length === 0}
-            onclick={() => store.startTurnir()}
+            onclick={() => {
+              music.stop()
+              store.startTurnir()
+            }}
           >
             <Play /> Запуск
           </Button>

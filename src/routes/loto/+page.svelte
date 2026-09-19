@@ -526,10 +526,11 @@
           </div>
           <div class="flex items-center gap-6">
             <Button
-              class="{countdownTimer.state !== 'active'
+              class="{countdownTimer.state !== 'active' && lotoStore.ticketsOrdered.length > 0
                 ? 'button-animate'
-                : ''} h-auto rounded-xl bg-green-600 px-12 py-6 text-xl font-black tracking-tighter uppercase shadow-xl transition-all hover:scale-105 hover:bg-green-500 active:scale-95"
+                : ''} h-auto rounded-xl bg-green-600 px-12 py-6 text-xl font-black tracking-tighter uppercase shadow-xl transition-all hover:scale-105 hover:bg-green-500 active:scale-95 disabled:opacity-30"
               onclick={() => lotoStore.start()}
+              disabled={lotoStore.ticketsOrdered.length === 0}
             >
               Начать
             </Button>

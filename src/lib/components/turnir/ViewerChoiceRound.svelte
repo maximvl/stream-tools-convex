@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getChatStore } from '$lib/context'
+  import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import { TurnirVoting } from '$lib/stores/turnirVoting.svelte'
   import type { Item } from '$lib/turnir/types'
   import { untrack } from 'svelte'
@@ -15,6 +16,12 @@
   let { items, onItemElimination, subscriberOnly }: Props = $props()
 
   const chatStore = getChatStore()
+  const musicStore = getMusicStore()
+
+  $effect(() => {
+    musicStore.play('rickroll')
+    return () => musicStore.stop()
+  })
 
   let time = $state(0)
   // Per-round instance: component is {#key roundId}, so items are fixed for its

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import InfoPanel from './InfoPanel.svelte'
   import SelectItem from './SelectItem.svelte'
@@ -9,6 +10,13 @@
   }
 
   let { items, onItemDeal }: Props = $props()
+
+  const musicStore = getMusicStore()
+
+  $effect(() => {
+    musicStore.play('light')
+    return () => musicStore.stop()
+  })
 
   let skipRounds = $derived(Math.round(items.length / 2))
 </script>

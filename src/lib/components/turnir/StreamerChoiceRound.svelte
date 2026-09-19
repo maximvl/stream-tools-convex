@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import SelectItem from './SelectItem.svelte'
   import InfoPanel from './InfoPanel.svelte'
@@ -9,6 +10,13 @@
   }
 
   let { items, onItemElimination }: Props = $props()
+
+  const musicStore = getMusicStore()
+
+  $effect(() => {
+    musicStore.play(Math.random() >= 0.5 ? 'thinking' : 'light')
+    return () => musicStore.stop()
+  })
 </script>
 
 <div class="flex flex-col items-center">

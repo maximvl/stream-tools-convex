@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
+  import { getMusicStore, type MusicTrack } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import { untrack } from 'svelte'
   import ItemTitle from './ItemTitle.svelte'
@@ -13,6 +14,9 @@
     confirmVariant?: ConfirmVariant
     /** Per-outcome confirm button (e.g. DealReturn's return vs eliminate). */
     getConfirmButton?: (item: Item) => { label: string; variant: ConfirmVariant }
+    /** Track to play while spinning (default 'wheel'). Without an explicit
+        track the music stops when the wheel does, like the original. */
+    music?: MusicTrack
   }
 
   let {
@@ -21,7 +25,10 @@
     confirmLabel = 'Удалить',
     confirmVariant = 'destructive',
     getConfirmButton,
+    music,
   }: Props = $props()
+
+  const musicStore = getMusicStore()
 
   type WheelState = 'start' | 'acceleration' | 'constant' | 'deceleration' | 'stop'
 
@@ -234,9 +241,10 @@
       // Decide the rollback coin flip per spin (same 50/50 chance as the
       // original), so the outcome always belongs to this spin and can never
       // go stale from an earlier reset.
-      hasBacktrack = Math.random() > 0.5
+      hasBacktrack = Math.random() > 0.7
       wheelState = 'acceleration'
       speed = START_SPEED
+      musicStore.play(music ?? 'wheel')
     }
   }
 
@@ -248,6 +256,14 @@
     wheelState = 'start'
     onItemWinning(currentItem.id)
   }
+
+  // Silence the spin track when the wheel stops, unless an explicit round
+  // track (e.g. nightsong) was requested — mirrors the original effect.
+  $effect(() => {
+    if (isFinished && !music) {
+      musicStore.stop()
+    }
+  })
 
   // (re)start RAF loop whenever the item count changes; cleanup on destroy.
   // NOTE: resetWheel()/drawWheel() read reactive state (wheelState, initialAngle),
