@@ -59,24 +59,20 @@
     {/if}
   </div>
   <div class="mt-2 flex justify-center">
-    <div class="grid grid-cols-[auto_12.5rem_auto] items-center gap-x-4 gap-y-2.5">
+    <div
+      class="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5"
+    >
       {#each items as item (item.id)}
         {@const highlight = totalVotes > 0 && winningIds.includes(item.id)}
         {@const currentVotes = votesByOption[item.id] ?? 0}
         {@const pct = totalVotes > 0 ? (currentVotes / totalVotes) * 100 : 0}
-        <div class="justify-self-end">
-          <SelectItem
-            {item}
-            selected={highlight}
-            onItemClick={(id: string) => onItemElimination?.(id)}
-          />
-        </div>
-        <div class="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            class="h-full rounded-full transition-all {highlight ? 'bg-red-400' : 'bg-primary'}"
-            style:width={`${pct}%`}
-          ></div>
-        </div>
+        <SelectItem
+          {item}
+          selected={highlight}
+          fillPct={pct}
+          fullWidth
+          onItemClick={(id: string) => onItemElimination?.(id)}
+        />
         <div class="text-lg leading-none">
           {currentVotes}
         </div>
