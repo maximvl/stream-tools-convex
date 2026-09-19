@@ -37,16 +37,6 @@
     <div class="flex flex-col gap-4 rounded-3xl border bg-card p-6">
       <div class="flex flex-wrap gap-2">
         <Button
-          class="bg-green-600 hover:bg-green-500"
-          disabled={store.nonEmptyItems.length === 0 ||
-            store.activeRounds.length === 0 ||
-            !store.canEditItems}
-          onclick={() => store.startTurnir()}
-        >
-          <Play /> Запуск
-        </Button>
-
-        <Button
           variant="secondary"
           disabled={!store.isRoundActive}
           onclick={() => (showSkipDialog = true)}
@@ -99,9 +89,20 @@
         <Victory winner={store.winner} />
       {:else}
         <p class="text-muted-foreground">
-          Заполните участников слева и нажмите «Запуск». Осталось участников: {store.nonEmptyItems
-            .length}
+          Заполните участников слева и нажмите «Запуск». Участников: {store.nonEmptyItems.length}
         </p>
+        {#if store.canEditItems}
+          <Button
+            class="mt-6 bg-green-600 px-10 py-6 text-lg font-bold hover:bg-green-500"
+            disabled={store.nonEmptyItems.length === 0 || store.activeRounds.length === 0}
+            onclick={() => store.startTurnir()}
+          >
+            <Play /> Запуск
+          </Button>
+          {#if store.activeRounds.length === 0}
+            <p class="mt-2 text-sm text-amber-500">Включите хотя бы один раунд в настройках</p>
+          {/if}
+        {/if}
       {/if}
     </div>
   </div>
