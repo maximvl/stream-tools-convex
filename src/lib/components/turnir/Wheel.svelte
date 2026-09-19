@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
+  import { CAT_DANCE_IMG } from '$lib/constants'
   import { getMusicStore, type MusicTrack } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import { untrack } from 'svelte'
@@ -17,6 +18,8 @@
     /** Track to play while spinning (default 'wheel'). Without an explicit
         track the music stops when the wheel does, like the original. */
     music?: MusicTrack
+    /** Center image shown while spinning (default dancing cat). */
+    centerImage?: string
   }
 
   let {
@@ -26,6 +29,7 @@
     confirmVariant = 'destructive',
     getConfirmButton,
     music,
+    centerImage = CAT_DANCE_IMG,
   }: Props = $props()
 
   const musicStore = getMusicStore()
@@ -325,6 +329,17 @@
       ></div>
       {#if wheelState === 'start'}
         <Button onclick={startSpinning} class="z-10">Запуск</Button>
+      {/if}
+      {#if wheelState !== 'start' && wheelState !== 'stop'}
+        <img
+          src={centerImage}
+          alt=""
+          class="pointer-events-none absolute z-5"
+          style:top={`${SIZE / 2 - CENTER_RADIUS}px`}
+          style:left={`${SIZE / 2 - CENTER_RADIUS}px`}
+          style:width={`${CENTER_RADIUS * 2}px`}
+          style:height={`${CENTER_RADIUS * 2}px`}
+        />
       {/if}
     </div>
   </div>

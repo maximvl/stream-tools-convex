@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
+  import { PRAY_IMG } from '$lib/constants'
   import { getMusicStore } from '$lib/stores/musicStore.svelte'
   import type { Item } from '$lib/turnir/types'
   import InfoPanel from './InfoPanel.svelte'
@@ -51,6 +52,7 @@
     confirmLabel="Воскресить"
     confirmVariant="default"
     music="nightsong"
+    centerImage={PRAY_IMG}
   />
 {:else}
   <ResurrectionVoting items={eliminatedItems} {onItemResurrection} {subscriberOnly} />
