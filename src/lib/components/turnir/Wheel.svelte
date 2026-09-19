@@ -50,10 +50,12 @@
     '#6a1b9a',
   ]
 
-  const START_SPEED = 0.00009
+  const START_SPEED = 0.002
   const SLOWEST_SPEED = 0.0006
   const FASTEST_SPEED = 0.2
-  const ACCELERATION = 0.0005
+  // Reached top speed in ~40 frames (~0.7s). The original 0.0005 took ~400
+  // frames (~7s) just to spin up, which felt like the wheel was stuck.
+  const ACCELERATION = 0.005
   const BACKTRACK_SPEED = -0.001
 
   let decelerationSteps: Array<[number, number]> = $derived.by(() => {
@@ -219,6 +221,10 @@
 
   function startSpinning() {
     if (wheelState === 'start') {
+      // Decide the rollback coin flip per spin (same 50/50 chance as the
+      // original), so the outcome always belongs to this spin and can never
+      // go stale from an earlier reset.
+      hasBacktrack = Math.random() > 0.5
       wheelState = 'acceleration'
       speed = START_SPEED
     }
