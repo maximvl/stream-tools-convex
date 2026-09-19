@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button'
   import type { Item } from '$lib/turnir/types'
+  import { untrack } from 'svelte'
   import ItemTitle from './ItemTitle.svelte'
 
   type Props = {
@@ -233,10 +234,13 @@
   }
 
   // (re)start RAF loop whenever the item count changes; cleanup on destroy.
+  // NOTE: resetWheel()/drawWheel() read reactive state (wheelState, initialAngle),
+  // so they must run untracked — otherwise clicking Start (which sets wheelState)
+  // would re-trigger this effect and instantly reset the wheel instead of spinning.
   $effect(() => {
     const count = items.length
     if (count === 0) return
-    resetWheel()
+    untrack(() => resetWheel())
     rafId = requestAnimationFrame(animate)
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId)
