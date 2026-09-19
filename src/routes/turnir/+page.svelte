@@ -4,7 +4,9 @@
   import Nav from '$lib/components/layout/Nav.svelte'
   import { Button } from '$lib/components/ui/button'
   import ItemsList from '$lib/components/turnir/ItemsList.svelte'
+  import ProtectionRevealDialog from '$lib/components/turnir/ProtectionRevealDialog.svelte'
   import RoundContent from '$lib/components/turnir/RoundContent.svelte'
+  import SwapRevealDialog from '$lib/components/turnir/SwapRevealDialog.svelte'
   import RoundTitle from '$lib/components/turnir/RoundTitle.svelte'
   import SkipRoundDialog from '$lib/components/turnir/SkipRoundDialog.svelte'
   import TurnirSettingsDialog from '$lib/components/turnir/TurnirSettingsDialog.svelte'
@@ -109,6 +111,8 @@
               roundType={store.currentRoundType}
               activeItems={store.activeItems}
               onItemElimination={(id) => store.eliminateItem(id)}
+              onItemProtection={(id) => store.protectItem(id)}
+              onItemSwap={(id) => store.applySwap(id)}
               subscriberOnly={store.subscriberOnly}
             />
           {/key}
@@ -144,3 +148,18 @@
     store.skipRound()
   }}
 />
+
+<ProtectionRevealDialog
+  bind:open={store.showProtectionModal}
+  item={store.protectionRevealItem}
+  onConfirm={() => store.resolveProtectionReveal()}
+/>
+
+{#if store.swapRevealItems}
+  <SwapRevealDialog
+    bind:open={store.showSwapModal}
+    initialItem={store.swapRevealItems.initial}
+    actionItem={store.swapRevealItems.action}
+    onConfirm={() => store.resolveSwapReveal()}
+  />
+{/if}

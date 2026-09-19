@@ -2,6 +2,8 @@ import { createContext } from 'svelte'
 import {
   createItem,
   ClassicRoundTypes,
+  ImplementedBonusRounds,
+  OneTimeRounds,
   RoundTypes,
   type Item,
   type RoundType,
@@ -61,7 +63,8 @@ function pickRandom<T>(options: T[]): T | undefined {
 }
 
 /**
- * Reactive port of TournirPage.tsx `TournirApp()` state machine (MVP: classic rounds only).
+ * Reactive port of TournirPage.tsx `TournirApp()` state machine
+ * (classic rounds + Protection/Swap bonus rounds).
  *
  * Refactor notes vs React:
  * - No `useEffect` transition loop on `[turnirState, items]`. Transitions are explicit:
@@ -81,6 +84,11 @@ export class TurnirStore {
   currentRoundType = $state<RoundType | null>(null)
   settings = getTurnirSettingsStore()
   lastNonBonusRoundType = $state<RoundType | null>(null)
+  usedOneTimeRounds = $state<RoundType[]>([])
+  showProtectionModal = $state(false)
+  showSwapModal = $state(false)
+  protectionRevealItemId = $state<string | null>(null)
+  swapReveal = $state<{ initialId: string; actionId: string } | null>(null)
 
   get noRoundRepeat() {
     return this.settings.value.noRoundRepeat
@@ -106,8 +114,26 @@ export class TurnirStore {
     this.nonEmptyItems.filter((item) => item.status === 'Eliminated'),
   )
   activeRounds = $derived.by(() =>
-    ClassicRoundTypes.filter((round) => this.settings.value.roundTypes[round]),
+    [...ClassicRoundTypes, ...ImplementedBonusRounds].filter(
+      (round) => this.settings.value.roundTypes[round],
+    ),
   )
+  swapItem = $derived.by(() => this.activeItems.find((item) => item.swappedWith !== undefined))
+  targetSwapItem = $derived.by(() => {
+    const swap = this.swapItem
+    return swap ? this.activeItems.find((item) => item.id === swap.swappedWith) : undefined
+  })
+  protectionRevealItem = $derived.by(() =>
+    this.protectionRevealItemId
+      ? (this.activeItems.find((item) => item.id === this.protectionRevealItemId) ?? undefined)
+      : undefined,
+  )
+  swapRevealItems = $derived.by(() => {
+    if (!this.swapReveal) return undefined
+    const initial = this.activeItems.find((item) => item.id === this.swapReveal?.initialId)
+    const action = this.activeItems.find((item) => item.id === this.swapReveal?.actionId)
+    return initial && action ? { initial, action } : undefined
+  })
   canEditItems = $derived(this.turnirState === 'EditCandidates')
   isRoundActive = $derived(this.turnirState === 'RoundStart' && this.currentRoundType !== null)
   totalRounds = $derived(Math.max(0, this.nonEmptyItems.length - 1))
@@ -161,18 +187,86 @@ export class TurnirStore {
     this.roundNumber = 1
     this.roundId = 0
     this.lastNonBonusRoundType = null
+    this.usedOneTimeRounds = []
+    this.showProtectionModal = false
+    this.showSwapModal = false
+    this.protectionRevealItemId = null
+    this.swapReveal = null
     this.startNextRound()
   }
 
-  /** MVP elimination: no protection/swap guards (those arrive with bonus rounds). */
   eliminateItem(id: string) {
     if (!this.isRoundActive || !this.currentRoundType) return
     const item = this.activeItems.find((item) => item.id === id)
     if (!item) return
+    if (item.isProtected) {
+      this.protectionRevealItemId = item.id
+      this.showProtectionModal = true
+      return
+    }
+    const swap = this.swapItem
+    const target = this.targetSwapItem
+    if (item.swappedWith && target) {
+      this.swapReveal = { initialId: item.id, actionId: target.id }
+      this.showSwapModal = true
+      return
+    }
+    if (target && swap?.swappedWith && item.id === target.id) {
+      this.swapReveal = { initialId: item.id, actionId: swap.id }
+      this.showSwapModal = true
+      return
+    }
+    this.eliminateNow(item)
+  }
+
+  private eliminateNow(item: Item) {
+    if (!this.currentRoundType) return
     item.status = 'Eliminated'
     item.eliminationRound = this.roundNumber
     item.eliminationType = this.currentRoundType
     this.advanceAfterChange()
+  }
+
+  /** Protection round wheel winner gets one-time protection. */
+  protectItem(id: string) {
+    if (!this.isRoundActive) return
+    const item = this.activeItems.find((item) => item.id === id)
+    if (!item) return
+    item.isProtected = true
+    this.advanceAfterChange()
+  }
+
+  /** Swap round wheel winner secretly swaps with a random other item. */
+  applySwap(id: string) {
+    if (!this.isRoundActive) return
+    const item = this.activeItems.find((item) => item.id === id)
+    if (!item) return
+    const target = pickRandom(this.activeItems.filter((i) => i.id !== id))
+    if (!target) return
+    item.swappedWith = target.id
+    this.advanceAfterChange()
+  }
+
+  /** ProtectionRemoveModal confirm: protection is consumed, no elimination. */
+  resolveProtectionReveal() {
+    const item = this.protectionRevealItem
+    this.showProtectionModal = false
+    this.protectionRevealItemId = null
+    if (!item) return
+    item.isProtected = false
+    this.advanceAfterChange()
+  }
+
+  /** SwapRevealModal confirm: swap links cleared, the real target is eliminated. */
+  resolveSwapReveal() {
+    const reveal = this.swapRevealItems
+    this.showSwapModal = false
+    this.swapReveal = null
+    if (!reveal) return
+    reveal.initial.swappedWith = undefined
+    reveal.action.swappedWith = undefined
+    // May chain into the protection modal if the real target is protected.
+    this.eliminateItem(reveal.action.id)
   }
 
   /** Skip button / SkipRoundModal confirm: advance without eliminating. */
@@ -198,14 +292,21 @@ export class TurnirStore {
   private startNextRound() {
     const next = this.pickNextRoundType()
     if (!next) return
-    this.lastNonBonusRoundType = next
+    if (!OneTimeRounds.includes(next)) {
+      this.lastNonBonusRoundType = next
+    } else {
+      this.usedOneTimeRounds = [...this.usedOneTimeRounds, next]
+    }
     this.currentRoundType = next
     this.roundId += 1
     this.turnirState = 'RoundStart'
   }
 
   private pickNextRoundType(): RoundType | undefined {
-    let options = [...this.activeRounds]
+    // One-time bonus rounds are removed from the pool once used.
+    // TODO(step 3): forced overrides for Deal / Resurrection / DealReturn
+    // (highest priority picks based on active/eliminated counts).
+    let options = this.activeRounds.filter((round) => !this.usedOneTimeRounds.includes(round))
     if (this.noRoundRepeat && options.length > 1 && this.lastNonBonusRoundType) {
       options = options.filter((round) => round !== this.lastNonBonusRoundType)
     }

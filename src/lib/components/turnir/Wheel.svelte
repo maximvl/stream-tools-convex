@@ -6,9 +6,16 @@
   type Props = {
     items: Item[]
     onItemWinning: (id: string) => void
+    confirmLabel?: string
+    confirmVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
   }
 
-  let { items, onItemWinning }: Props = $props()
+  let {
+    items,
+    onItemWinning,
+    confirmLabel = 'Удалить',
+    confirmVariant = 'destructive',
+  }: Props = $props()
 
   type WheelState = 'start' | 'acceleration' | 'constant' | 'deceleration' | 'stop'
 
@@ -245,7 +252,7 @@
     </h2>
   {/if}
   {#if isFinished}
-    <Button variant="destructive" class="m-2" onclick={confirmWinner}>Удалить</Button>
+    <Button variant={confirmVariant} class="m-2" onclick={confirmWinner}>{confirmLabel}</Button>
   {/if}
   <div class="mt-2 flex justify-center">
     <div

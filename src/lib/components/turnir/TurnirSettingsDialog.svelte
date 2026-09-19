@@ -4,7 +4,12 @@
   import { Checkbox } from '$lib/components/ui/checkbox'
   import { Label } from '$lib/components/ui/label'
   import { Settings } from '@lucide/svelte'
-  import { ClassicRoundTypes, RoundTypeNames, RoundTypeTooltip } from '$lib/turnir/types'
+  import {
+    ClassicRoundTypes,
+    ImplementedBonusRounds,
+    RoundTypeNames,
+    RoundTypeTooltip,
+  } from '$lib/turnir/types'
   import { defaultTurnirSettings, type TurnirStore } from '$lib/stores/turnirStore.svelte'
 
   type Props = {
@@ -49,6 +54,24 @@
       <div class="flex flex-col gap-2">
         <p class="text-sm font-bold">Классические раунды</p>
         {#each ClassicRoundTypes as roundType (roundType)}
+          <div class="flex items-center gap-2" title={RoundTypeTooltip[roundType] ?? ''}>
+            <Checkbox
+              id={`turnir-round-${roundType}`}
+              checked={store.settings.value.roundTypes[roundType]}
+              onCheckedChange={(v: boolean) => {
+                store.settings.value.roundTypes[roundType] = v
+              }}
+              disabled={!store.canEditItems}
+            />
+            <Label for={`turnir-round-${roundType}`} class="cursor-pointer">
+              {RoundTypeNames[roundType]}
+            </Label>
+          </div>
+        {/each}
+      </div>
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-bold">Бонусные раунды (один раз за турнир)</p>
+        {#each ImplementedBonusRounds as roundType (roundType)}
           <div class="flex items-center gap-2" title={RoundTypeTooltip[roundType] ?? ''}>
             <Checkbox
               id={`turnir-round-${roundType}`}

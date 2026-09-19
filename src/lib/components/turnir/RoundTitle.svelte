@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RoundTypeNames, type RoundType } from '$lib/turnir/types'
+  import { OneTimeRounds, RoundTypeNames, type RoundType } from '$lib/turnir/types'
 
   type Props = {
     roundNumber: number
@@ -10,10 +10,15 @@
   let { roundNumber, roundType, itemsLeft }: Props = $props()
 
   let isFinals = $derived(itemsLeft === 2)
+  let isBonus = $derived(OneTimeRounds.includes(roundType))
 </script>
 
 <div>
-  {#if isFinals}
+  {#if isBonus}
+    <h3 class="mt-0 text-xl font-bold">
+      Бонусный раунд: {RoundTypeNames[roundType]}
+    </h3>
+  {:else if isFinals}
     <h1 class="mt-0 text-3xl font-extrabold">Финал</h1>
     <p class="text-muted-foreground">{RoundTypeNames[roundType]}</p>
   {:else}

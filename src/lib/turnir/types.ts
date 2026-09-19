@@ -26,11 +26,21 @@ export type RoundType =
   | 'Deal'
   | 'DealReturn'
 
-/** MVP subset: classic rounds only. Bonus rounds come later. */
 export const ClassicRoundTypes: RoundType[] = [
   'RandomElimination',
   'StreamerChoice',
   'ViewerChoice',
+]
+
+/** Bonus rounds currently implemented in Svelte (Protection, Swap). */
+export const ImplementedBonusRounds: RoundType[] = ['Protection', 'Swap']
+
+export const OneTimeRounds: RoundType[] = [
+  'Protection',
+  'Swap',
+  'Resurrection',
+  'Deal',
+  'DealReturn',
 ]
 
 export const NewRoundTypes: RoundType[] = [
