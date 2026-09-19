@@ -32,7 +32,7 @@
       </div>
     </div>
   </div>
-  <img src={FIREWORKS_IMG} alt="" class="relative z-10 w-full" />
+  <img src={FIREWORKS_IMG} alt="" class="relative z-10 h-[55vh] w-full object-contain" />
 </div>
 
 <style>

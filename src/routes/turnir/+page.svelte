@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { Play, Plus, RotateCcw, SkipForward, Volume2, VolumeOff } from '@lucide/svelte'
+  import {
+    Maximize2,
+    Minimize2,
+    Play,
+    Plus,
+    RotateCcw,
+    SkipForward,
+    Volume2,
+    VolumeOff,
+  } from '@lucide/svelte'
   import { onDestroy } from 'svelte'
   import ConnectionDialog from '$lib/components/connections/ConnectionDialog.svelte'
   import Nav from '$lib/components/layout/Nav.svelte'
@@ -21,6 +30,14 @@
   setMusicStore(music)
 
   let showSkipDialog = $state(false)
+  let panelCollapsed = $state(false)
+
+  // Auto-collapse the participants panel when the tournament runs,
+  // expand it back in edit mode. Manual toggles in between are untouched
+  // since this only re-runs when the edit/playing phase changes.
+  $effect(() => {
+    panelCollapsed = !store.canEditItems
+  })
 
   // Victory fanfare on win, silence on restart. Round-specific tracks are
   // started by the round components themselves on mount.
@@ -99,34 +116,50 @@
         >
           <RotateCcw /> Рестарт
         </Button>
-        <TurnirSettingsDialog {store} />
+        <Button
+          variant="ghost"
+          size="icon"
+          onclick={() => (panelCollapsed = !panelCollapsed)}
+          title={panelCollapsed ? 'Развернуть панель участников' : 'Свернуть панель участников'}
+        >
+          {#if panelCollapsed}
+            <Maximize2 />
+          {:else}
+            <Minimize2 />
+          {/if}
+        </Button>
+        {#if !panelCollapsed}
+          <TurnirSettingsDialog {store} />
+        {/if}
       </div>
 
-      <ItemsList
-        items={store.items}
-        activeItems={store.nonEmptyItems}
-        canEditItems={store.canEditItems}
-        setItemTitle={(i, text) => store.setItemTitle(i, text)}
-        pasteItems={(i, lines) => store.pasteItems(i, lines)}
-      />
+      {#if !panelCollapsed}
+        <ItemsList
+          items={store.items}
+          activeItems={store.nonEmptyItems}
+          canEditItems={store.canEditItems}
+          setItemTitle={(i, text) => store.setItemTitle(i, text)}
+          pasteItems={(i, lines) => store.pasteItems(i, lines)}
+        />
 
-      {#if store.canEditItems}
-        <Button variant="outline" onclick={() => store.addMoreItems()}>
-          <Plus /> Добавить слотов
-        </Button>
+        {#if store.canEditItems}
+          <Button variant="outline" onclick={() => store.addMoreItems()}>
+            <Plus /> Добавить слотов
+          </Button>
+        {/if}
       {/if}
     </div>
 
     <div
       class="mt-6 flex min-h-[60vh] flex-1 flex-col items-center justify-start rounded-3xl border bg-card p-6 text-center lg:mt-0"
     >
-      {#if store.currentRoundType}
+      {#if store.isRoundActive && store.currentRoundType}
         <RoundTitle
           roundNumber={store.roundNumber}
           roundType={store.currentRoundType}
           itemsLeft={store.activeItems.length}
         />
-      {:else}
+      {:else if store.turnirState !== 'Victory'}
         <h3 class="mt-0 text-xl font-bold text-muted-foreground">Подготовка турнира</h3>
       {/if}
       {#if store.isRoundActive && store.currentRoundType}
