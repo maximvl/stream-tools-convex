@@ -59,37 +59,25 @@
     {/if}
   </div>
   <div class="mt-2 flex justify-center">
-    <div class="flex w-fit flex-col">
+    <div class="grid grid-cols-[auto_12.5rem_auto] items-center gap-x-4 gap-y-2.5">
       {#each items as item (item.id)}
         {@const highlight = totalVotes > 0 && winningIds.includes(item.id)}
-        <div class="mb-2.5 text-right">
+        {@const currentVotes = votesByOption[item.id] ?? 0}
+        {@const pct = totalVotes > 0 ? (currentVotes / totalVotes) * 100 : 0}
+        <div class="justify-self-end">
           <SelectItem
             {item}
             selected={highlight}
             onItemClick={(id: string) => onItemElimination?.(id)}
           />
         </div>
-      {/each}
-    </div>
-    <div class="ml-4 flex w-50 flex-col">
-      {#each items as item (item.id)}
-        {@const highlight = totalVotes > 0 && winningIds.includes(item.id)}
-        {@const currentVotes = votesByOption[item.id] ?? 0}
-        {@const pct = totalVotes > 0 ? (currentVotes / totalVotes) * 100 : 0}
-        <div class="mb-2.5 grid h-8 w-50 items-center">
-          <div class="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              class="h-full rounded-full transition-all {highlight ? 'bg-red-400' : 'bg-primary'}"
-              style:width={`${pct}%`}
-            ></div>
-          </div>
+        <div class="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            class="h-full rounded-full transition-all {highlight ? 'bg-red-400' : 'bg-primary'}"
+            style:width={`${pct}%`}
+          ></div>
         </div>
-      {/each}
-    </div>
-    <div class="ml-2.5 flex flex-col self-end">
-      {#each items as item (item.id)}
-        {@const currentVotes = votesByOption[item.id] ?? 0}
-        <div class="mb-2.5 grid h-8 content-center text-lg">
+        <div class="text-lg leading-none">
           {currentVotes}
         </div>
       {/each}
