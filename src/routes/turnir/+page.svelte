@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play, Plus, RotateCcw, SkipForward } from '@lucide/svelte'
+  import { PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCcw, SkipForward } from '@lucide/svelte'
   import ConnectionDialog from '$lib/components/connections/ConnectionDialog.svelte'
   import Nav from '$lib/components/layout/Nav.svelte'
   import { Button } from '$lib/components/ui/button'
@@ -14,6 +14,14 @@
   const store = new TurnirStore()
 
   let showSkipDialog = $state(false)
+  let panelCollapsed = $state(false)
+
+  // Auto-collapse the participants panel when the tournament runs,
+  // expand it back in edit mode. Manual toggles in between are untouched
+  // since this only re-runs when the edit/playing phase changes.
+  $effect(() => {
+    panelCollapsed = !store.canEditItems
+  })
 </script>
 
 <svelte:head>
@@ -33,42 +41,62 @@
     <div class="w-[250px]"></div>
   </div>
 
-  <div class="grid w-full max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
-    <div class="flex flex-col gap-4 rounded-3xl border bg-card p-6">
-      <div class="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          disabled={!store.isRoundActive}
-          onclick={() => (showSkipDialog = true)}
-        >
-          <SkipForward /> Скип раунда
-        </Button>
-        <Button
-          variant="destructive"
-          disabled={store.turnirState === 'EditCandidates'}
-          onclick={() => store.restartToEdit()}
-        >
-          <RotateCcw /> Рестарт
-        </Button>
-        <TurnirSettingsDialog {store} />
+  <div
+    class="grid w-full max-w-7xl grid-cols-1 gap-6 {panelCollapsed
+      ? ''
+      : 'lg:grid-cols-[360px_1fr]'}"
+  >
+    {#if !panelCollapsed}
+      <div class="flex flex-col gap-4 rounded-3xl border bg-card p-6">
+        <div class="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            disabled={!store.isRoundActive}
+            onclick={() => (showSkipDialog = true)}
+          >
+            <SkipForward /> Скип раунда
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={store.turnirState === 'EditCandidates'}
+            onclick={() => store.restartToEdit()}
+          >
+            <RotateCcw /> Рестарт
+          </Button>
+          <TurnirSettingsDialog {store} />
+        </div>
+
+        <ItemsList
+          items={store.items}
+          activeItems={store.nonEmptyItems}
+          canEditItems={store.canEditItems}
+          setItemTitle={(i, text) => store.setItemTitle(i, text)}
+          pasteItems={(i, lines) => store.pasteItems(i, lines)}
+        />
+
+        {#if store.canEditItems}
+          <Button variant="outline" onclick={() => store.addMoreItems()}>
+            <Plus /> Добавить слотов
+          </Button>
+        {/if}
       </div>
-
-      <ItemsList
-        items={store.items}
-        activeItems={store.nonEmptyItems}
-        canEditItems={store.canEditItems}
-        setItemTitle={(i, text) => store.setItemTitle(i, text)}
-        pasteItems={(i, lines) => store.pasteItems(i, lines)}
-      />
-
-      {#if store.canEditItems}
-        <Button variant="outline" onclick={() => store.addMoreItems()}>
-          <Plus /> Добавить слотов
-        </Button>
-      {/if}
-    </div>
+    {/if}
 
     <div class="flex flex-col items-center rounded-3xl border bg-card p-6 text-center">
+      <div class="flex w-full justify-start">
+        <Button
+          variant="ghost"
+          size="sm"
+          onclick={() => (panelCollapsed = !panelCollapsed)}
+          title={panelCollapsed ? 'Показать панель участников' : 'Скрыть панель участников'}
+        >
+          {#if panelCollapsed}
+            <PanelLeftOpen /> Участники
+          {:else}
+            <PanelLeftClose /> Скрыть
+          {/if}
+        </Button>
+      </div>
       {#if store.isRoundActive && store.currentRoundType}
         <RoundTitle
           roundNumber={store.roundNumber}
