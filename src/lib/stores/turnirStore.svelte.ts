@@ -1,15 +1,59 @@
 import { createContext } from 'svelte'
-import { SvelteMap } from 'svelte/reactivity'
 import {
   createItem,
   ClassicRoundTypes,
+  RoundTypes,
   type Item,
   type RoundType,
   type TurnirState,
 } from '$lib/turnir/types'
+import { LocalStore } from './localStore.svelte'
 
 const INITIAL_ITEMS = 10
 const ADD_MORE_ITEMS = 10
+
+export type TurnirSettings = {
+  noRoundRepeat: boolean
+  subscriberOnly: boolean
+  roundTypes: Record<RoundType, boolean>
+}
+
+export function defaultTurnirSettings(): TurnirSettings {
+  return {
+    noRoundRepeat: true,
+    subscriberOnly: false,
+    roundTypes: {
+      RandomElimination: true,
+      StreamerChoice: true,
+      ViewerChoice: true,
+      Protection: false,
+      StreamerVsRandom: false,
+      Swap: false,
+      ClosestVotes: false,
+      Resurrection: false,
+      Deal: false,
+      DealReturn: false,
+    },
+  }
+}
+
+export function getTurnirSettingsStore() {
+  const store = new LocalStore<TurnirSettings>('turnir-settings', defaultTurnirSettings())
+  const defaults = defaultTurnirSettings()
+  const patched: TurnirSettings = {
+    noRoundRepeat: store.value.noRoundRepeat ?? defaults.noRoundRepeat,
+    subscriberOnly: store.value.subscriberOnly ?? defaults.subscriberOnly,
+    roundTypes: { ...defaults.roundTypes, ...store.value.roundTypes },
+  }
+  if (
+    patched.noRoundRepeat !== store.value.noRoundRepeat ||
+    patched.subscriberOnly !== store.value.subscriberOnly ||
+    RoundTypes.some((round) => patched.roundTypes[round] !== store.value.roundTypes?.[round])
+  ) {
+    store.value = patched
+  }
+  return store
+}
 
 function pickRandom<T>(options: T[]): T | undefined {
   if (options.length === 0) return undefined
@@ -35,12 +79,24 @@ export class TurnirStore {
   roundNumber = $state(0)
   roundId = $state(0)
   currentRoundType = $state<RoundType | null>(null)
-  roundTypes = $state<SvelteMap<RoundType, boolean>>(
-    new SvelteMap(ClassicRoundTypes.map((t) => [t, true] as const)),
-  )
-  noRoundRepeat = $state(true)
-  subscriberOnly = $state(false)
+  settings = getTurnirSettingsStore()
   lastNonBonusRoundType = $state<RoundType | null>(null)
+
+  get noRoundRepeat() {
+    return this.settings.value.noRoundRepeat
+  }
+
+  set noRoundRepeat(value: boolean) {
+    this.settings.value.noRoundRepeat = value
+  }
+
+  get subscriberOnly() {
+    return this.settings.value.subscriberOnly
+  }
+
+  set subscriberOnly(value: boolean) {
+    this.settings.value.subscriberOnly = value
+  }
 
   // --- derived ---
 
@@ -50,7 +106,7 @@ export class TurnirStore {
     this.nonEmptyItems.filter((item) => item.status === 'Eliminated'),
   )
   activeRounds = $derived.by(() =>
-    [...this.roundTypes.entries()].filter(([, enabled]) => enabled).map(([round]) => round),
+    ClassicRoundTypes.filter((round) => this.settings.value.roundTypes[round]),
   )
   canEditItems = $derived(this.turnirState === 'EditCandidates')
   isRoundActive = $derived(this.turnirState === 'RoundStart' && this.currentRoundType !== null)
@@ -80,13 +136,17 @@ export class TurnirStore {
   }
 
   toggleRoundType(round: RoundType) {
-    this.roundTypes.set(round, !this.roundTypes.get(round))
+    this.settings.value.roundTypes[round] = !this.settings.value.roundTypes[round]
+  }
+
+  resetSettings() {
+    this.settings.value = defaultTurnirSettings()
   }
 
   // --- tournament flow ---
 
   startTurnir() {
-    if (this.nonEmptyItems.length === 0) return
+    if (this.nonEmptyItems.length === 0 || this.activeRounds.length === 0) return
     for (const item of this.nonEmptyItems) {
       item.status = 'Active'
       item.eliminationRound = undefined

@@ -3,14 +3,13 @@
   import ConnectionDialog from '$lib/components/connections/ConnectionDialog.svelte'
   import Nav from '$lib/components/layout/Nav.svelte'
   import { Button } from '$lib/components/ui/button'
-  import { Checkbox } from '$lib/components/ui/checkbox'
   import ItemsList from '$lib/components/turnir/ItemsList.svelte'
   import RoundContent from '$lib/components/turnir/RoundContent.svelte'
   import RoundTitle from '$lib/components/turnir/RoundTitle.svelte'
   import SkipRoundDialog from '$lib/components/turnir/SkipRoundDialog.svelte'
+  import TurnirSettingsDialog from '$lib/components/turnir/TurnirSettingsDialog.svelte'
   import Victory from '$lib/components/turnir/Victory.svelte'
   import { TurnirStore } from '$lib/stores/turnirStore.svelte'
-  import { ClassicRoundTypes, RoundTypeNames, RoundTypeTooltip } from '$lib/turnir/types'
 
   const store = new TurnirStore()
 
@@ -53,31 +52,15 @@
         </Button>
         <Button
           class="bg-green-600 hover:bg-green-500"
-          disabled={store.nonEmptyItems.length === 0 || !store.canEditItems}
+          disabled={store.nonEmptyItems.length === 0 ||
+            store.activeRounds.length === 0 ||
+            !store.canEditItems}
           onclick={() => store.startTurnir()}
         >
           <Play /> Запуск
         </Button>
+        <TurnirSettingsDialog {store} />
       </div>
-
-      {#if store.canEditItems}
-        <div class="flex flex-col gap-2">
-          <label
-            class="flex cursor-pointer items-center gap-2 text-sm"
-            title="Один и тот же раунд не будет повторяться подряд"
-          >
-            <Checkbox bind:checked={store.noRoundRepeat} />
-            Антиповтор раундов
-          </label>
-          <label
-            class="flex cursor-pointer items-center gap-2 text-sm"
-            title="Только сабы будут учитываться в голосованиях"
-          >
-            <Checkbox bind:checked={store.subscriberOnly} />
-            Только для САБОВ
-          </label>
-        </div>
-      {/if}
 
       <ItemsList
         items={store.items}
@@ -88,23 +71,6 @@
       />
 
       {#if store.canEditItems}
-        <div class="flex flex-col gap-1">
-          <p class="text-sm font-bold">Классические раунды</p>
-          {#each ClassicRoundTypes as roundType (roundType)}
-            <label
-              class="flex cursor-pointer items-center gap-2 text-sm"
-              title={RoundTypeTooltip[roundType] ?? ''}
-            >
-              <Checkbox
-                checked={store.roundTypes.get(roundType) ?? false}
-                onCheckedChange={(v: boolean) => {
-                  store.roundTypes.set(roundType, v)
-                }}
-              />
-              {RoundTypeNames[roundType]}
-            </label>
-          {/each}
-        </div>
         <Button variant="outline" onclick={() => store.addMoreItems()}>
           <Plus /> Добавить слотов
         </Button>
