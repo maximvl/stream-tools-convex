@@ -403,7 +403,14 @@ export class LotoStore {
   // reload or second tab converges to the same state. Any rolled numbers
   // mean the game already started — this is also what restores the
   // playing phase after a page refresh (gameState itself is local only).
+  // Skips identical payloads: every backend write to the game row re-fires
+  // the subscription, and a redundant commit mid-flight would replay the
+  // ticket reorder animation (Svelte measures flip from the live position).
   setDrawnNumbers(numbers: string[]) {
+    const current = this.drawnNumbers
+    if (current.length === numbers.length && current.every((n, i) => n === numbers[i])) {
+      return
+    }
     this.drawnNumbers = [...numbers]
     const drawn = new SvelteSet(numbers)
     this.drawPool = this.fullDrawPool().filter((n) => !drawn.has(n))
@@ -447,7 +454,31 @@ export class LotoStore {
     }
     // Backend is the source of truth; unconfirmed optimistic rows are kept
     // on top so they stay visible until the echo replaces them.
-    this.remoteTickets = [...keptPending, ...visible]
+    const next = [...keptPending, ...visible]
+    // Skip identical payloads: every ticket write re-fires the subscription,
+    // and a redundant commit mid-flight would replay the ticket reorder
+    // animation (Svelte measures flip from the live position). User cards
+    // for an unchanged list are already present, so nothing else to do.
+    if (
+      next.length === this.remoteTickets.length &&
+      next.every((t, i) => {
+        const c = this.remoteTickets[i]
+        return (
+          t.id === c.id &&
+          t.owner_id === c.owner_id &&
+          t.owner_name === c.owner_name &&
+          t.type === c.type &&
+          t.created_at === c.created_at &&
+          t.source.server === c.source.server &&
+          t.source.channel === c.source.channel &&
+          t.value.length === c.value.length &&
+          t.value.every((n, j) => n === c.value[j])
+        )
+      })
+    ) {
+      return
+    }
+    this.remoteTickets = next
     // Keep user cards working for backend tickets even before the author
     // chats again (display polling only covers live messages).
     for (const t of visible) {
