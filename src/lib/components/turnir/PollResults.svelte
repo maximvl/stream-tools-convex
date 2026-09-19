@@ -68,9 +68,7 @@
     {/if}
   </div>
   <div class="mt-4 flex justify-center">
-    <div
-      class="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5"
-    >
+    <div class="grid w-full max-w-md grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5">
       {#each items as item (item.id)}
         {@const highlight = totalVotes > 0 && !hideResults && winningIds.includes(item.id)}
         {@const currentVotes = votesByOption[item.id] ?? 0}

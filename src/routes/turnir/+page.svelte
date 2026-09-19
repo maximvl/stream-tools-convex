@@ -1,14 +1,5 @@
 <script lang="ts">
-  import {
-    PanelLeftClose,
-    PanelLeftOpen,
-    Play,
-    Plus,
-    RotateCcw,
-    SkipForward,
-    Volume2,
-    VolumeOff,
-  } from '@lucide/svelte'
+  import { Play, Plus, RotateCcw, SkipForward, Volume2, VolumeOff } from '@lucide/svelte'
   import { onDestroy } from 'svelte'
   import ConnectionDialog from '$lib/components/connections/ConnectionDialog.svelte'
   import Nav from '$lib/components/layout/Nav.svelte'
@@ -30,7 +21,6 @@
   setMusicStore(music)
 
   let showSkipDialog = $state(false)
-  let panelCollapsed = $state(false)
 
   // Victory fanfare on win, silence on restart. Round-specific tracks are
   // started by the round components themselves on mount.
@@ -43,13 +33,6 @@
   })
 
   onDestroy(() => music.stop())
-
-  // Auto-collapse the participants panel when the tournament runs,
-  // expand it back in edit mode. Manual toggles in between are untouched
-  // since this only re-runs when the edit/playing phase changes.
-  $effect(() => {
-    panelCollapsed = !store.canEditItems
-  })
 </script>
 
 <svelte:head>
@@ -94,72 +77,60 @@
 
   <MusicAudio />
 
-  <div
-    class="grid w-full max-w-7xl grid-cols-1 gap-6 {panelCollapsed
-      ? ''
-      : 'lg:grid-cols-[360px_1fr]'}"
-  >
-    {#if !panelCollapsed}
-      <div class="flex flex-col gap-4 rounded-3xl border bg-card p-6">
-        <div class="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            disabled={!store.isRoundActive}
-            onclick={() => (showSkipDialog = true)}
-          >
-            <SkipForward /> Скип раунда
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={store.turnirState === 'EditCandidates'}
-            onclick={() => {
-              music.stop()
-              store.restartToEdit()
-            }}
-          >
-            <RotateCcw /> Рестарт
-          </Button>
-          <TurnirSettingsDialog {store} />
-        </div>
-
-        <ItemsList
-          items={store.items}
-          activeItems={store.nonEmptyItems}
-          canEditItems={store.canEditItems}
-          setItemTitle={(i, text) => store.setItemTitle(i, text)}
-          pasteItems={(i, lines) => store.pasteItems(i, lines)}
-        />
-
-        {#if store.canEditItems}
-          <Button variant="outline" onclick={() => store.addMoreItems()}>
-            <Plus /> Добавить слотов
-          </Button>
-        {/if}
-      </div>
-    {/if}
-
-    <div class="flex flex-col items-center rounded-3xl border bg-card p-6 text-center">
-      <div class="flex w-full justify-start">
+  <div class="relative flex w-full max-w-7xl flex-1 flex-col">
+    <div
+      class="z-10 flex flex-col gap-4 rounded-3xl border bg-card p-6 lg:absolute lg:top-0 lg:left-0 lg:max-h-full lg:w-[360px] lg:overflow-y-auto lg:shadow-2xl"
+    >
+      <div class="flex flex-wrap gap-2">
         <Button
-          variant="ghost"
-          size="sm"
-          onclick={() => (panelCollapsed = !panelCollapsed)}
-          title={panelCollapsed ? 'Показать панель участников' : 'Скрыть панель участников'}
+          variant="secondary"
+          disabled={!store.isRoundActive}
+          onclick={() => (showSkipDialog = true)}
         >
-          {#if panelCollapsed}
-            <PanelLeftOpen /> Участники
-          {:else}
-            <PanelLeftClose /> Скрыть
-          {/if}
+          <SkipForward /> Скип раунда
         </Button>
+        <Button
+          variant="destructive"
+          disabled={store.turnirState === 'EditCandidates'}
+          onclick={() => {
+            music.stop()
+            store.restartToEdit()
+          }}
+        >
+          <RotateCcw /> Рестарт
+        </Button>
+        <TurnirSettingsDialog {store} />
       </div>
-      {#if store.isRoundActive && store.currentRoundType}
+
+      <ItemsList
+        items={store.items}
+        activeItems={store.nonEmptyItems}
+        canEditItems={store.canEditItems}
+        setItemTitle={(i, text) => store.setItemTitle(i, text)}
+        pasteItems={(i, lines) => store.pasteItems(i, lines)}
+      />
+
+      {#if store.canEditItems}
+        <Button variant="outline" onclick={() => store.addMoreItems()}>
+          <Plus /> Добавить слотов
+        </Button>
+      {/if}
+    </div>
+
+    <div
+      class="mt-6 flex min-h-[60vh] flex-1 flex-col items-center justify-start rounded-3xl border bg-card p-6 text-center lg:mt-0"
+    >
+      {#if store.currentRoundType}
         <RoundTitle
           roundNumber={store.roundNumber}
           roundType={store.currentRoundType}
           itemsLeft={store.activeItems.length}
         />
-        <div class="mt-4 w-full">
+      {:else}
+        <h3 class="mt-0 text-xl font-bold text-muted-foreground">Подготовка турнира</h3>
+      {/if}
+      {#if store.isRoundActive && store.currentRoundType}
+        <div class="mt-8 w-full">
           {#key store.roundId}
             <RoundContent
               roundType={store.currentRoundType}
@@ -178,24 +149,19 @@
         </div>
       {:else if store.turnirState === 'Victory' && store.winner}
         <Victory winner={store.winner} />
-      {:else}
-        <p class="text-muted-foreground">
-          Заполните участников слева и нажмите «Запуск». Участников: {store.nonEmptyItems.length}
-        </p>
-        {#if store.canEditItems}
-          <Button
-            class="mt-6 bg-green-600 px-10 py-6 text-lg font-bold hover:bg-green-500"
-            disabled={store.nonEmptyItems.length === 0 || store.activeRounds.length === 0}
-            onclick={() => {
-              music.stop()
-              store.startTurnir()
-            }}
-          >
-            <Play /> Запуск
-          </Button>
-          {#if store.activeRounds.length === 0}
-            <p class="mt-2 text-sm text-amber-500">Включите хотя бы один раунд в настройках</p>
-          {/if}
+      {:else if store.canEditItems}
+        <Button
+          class="mt-6 bg-green-600 px-10 py-6 text-lg font-bold hover:bg-green-500"
+          disabled={store.nonEmptyItems.length === 0 || store.activeRounds.length === 0}
+          onclick={() => {
+            music.stop()
+            store.startTurnir()
+          }}
+        >
+          <Play /> Запуск
+        </Button>
+        {#if store.activeRounds.length === 0}
+          <p class="mt-2 text-sm text-amber-500">Включи хотя бы один раунд в настройках</p>
         {/if}
       {/if}
     </div>

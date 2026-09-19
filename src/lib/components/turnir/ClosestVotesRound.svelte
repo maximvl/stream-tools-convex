@@ -85,7 +85,7 @@
     <div class="mt-4">
       <PollResults {items} votes={voting?.votes ?? []} hideResults {time} />
     </div>
-    <div class="mt-4">
+    <div class="mt-8">
       <VotesLog
         votes={voting?.voteMessages ?? []}
         {items}

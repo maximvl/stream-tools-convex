@@ -44,7 +44,10 @@
     {showLogs ? 'Скрыть логи' : 'Показать логи'}
   </Button>
   {#if showLogs}
-    <div bind:this={scrollable} class="m-1 h-75 overflow-scroll rounded-lg border">
+    <div
+      bind:this={scrollable}
+      class="m-1 mx-auto h-75 w-[480px] max-w-full overflow-scroll rounded-lg border px-2"
+    >
       {#each votes as vote (vote.id)}
         {@const optionId = vote.text.trim()}
         <span class="m-1 block text-left text-sm">
