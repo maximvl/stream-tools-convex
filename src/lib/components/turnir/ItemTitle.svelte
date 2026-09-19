@@ -16,17 +16,17 @@
   style:font-size={fontSize}
   title={truncate ? item.title : undefined}
 >
-  <span class={cn(truncate && 'truncate')}>{item.title}</span>
   {#if item.isProtected}
-    <span class="ml-1 shrink-0 text-green-500" title="Защищён">🛡</span>
+    <span class="mr-1 shrink-0 text-green-500" title="Защищён">🛡</span>
   {/if}
   {#if item.swappedWith}
-    <span class="ml-1 shrink-0 text-amber-500" title="Подменён">⇄</span>
+    <span class="mr-1 shrink-0 text-amber-500" title="Подменён">⇄</span>
   {/if}
   {#if item.isResurrected}
-    <span class="ml-1 shrink-0 text-white" title="Воскрешён">✚</span>
+    <span class="mr-1 shrink-0 text-white" title="Воскрешён">✚</span>
   {/if}
   {#if item.hasDeal}
-    <span class="ml-1 shrink-0 text-muted-foreground" title="Счастливый билетик">🎲</span>
+    <span class="mr-1 shrink-0 text-muted-foreground" title="Счастливый билетик">🎲</span>
   {/if}
+  <span class={cn(truncate && 'truncate')}>{item.title}</span>
 </span>
