@@ -15,6 +15,10 @@ export function formatStreamChannel(server: string, channel: string): string {
 const GLOBAL_KEY = 'convex-app:session'
 const LEGACY_PREFIX = 'convex-app:session:'
 
+// Browser event fired whenever the session id is (re)written, so pages can
+// track it reactively (`localStorage` reads are not reactive on their own).
+export const SESSION_CHANGE_EVENT = 'convex-app:session-change'
+
 export function getSessionId(): string | undefined {
   try {
     const direct = localStorage.getItem(GLOBAL_KEY)
@@ -48,6 +52,13 @@ export function setSessionId(sessionId: string): void {
     localStorage.setItem(GLOBAL_KEY, sessionId)
   } catch {
     // ignore quota / privacy-mode errors
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent<string>(SESSION_CHANGE_EVENT, { detail: sessionId }))
+    } catch {
+      // ignore event errors
+    }
   }
 }
 

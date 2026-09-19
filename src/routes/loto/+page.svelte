@@ -21,7 +21,8 @@
   import { createQueries } from '@tanstack/svelte-query'
   import { useConvexClient } from 'convex-svelte'
   import type { Id } from '../../../convex/_generated/dataModel.js'
-  import { getSessionId } from '$lib/session'
+  import { getSessionId, SESSION_CHANGE_EVENT } from '$lib/session'
+  import type { ConnKey } from '$lib/stores/chatMessagesStore.svelte'
   import { LocalStore } from '$lib/stores/localStore.svelte'
   import {
     addLotoTicket,
@@ -57,36 +58,48 @@
   lotoStore.setAuthStore(authStore)
 
   // ---- Backend loto game (instance id) ----
+  // gameId null means pure frontend mode: no backend records are created or
+  // stored, tickets/draws/winners all stay local. The savers below no-op
+  // until a backend game is attached (see backendEnabled below).
   const convex = useConvexClient()
   const gameIdStore = new LocalStore<string | null>('loto-game-id', null)
-  if (gameIdStore.value) {
+
+  // Resume a stored backend game only when a session exists; otherwise stay
+  // fully local (gameId null) until auth arrives.
+  if (gameIdStore.value && getSessionId()) {
     lotoStore.setGameId(gameIdStore.value)
   }
   lotoStore.ticketRemover = (ticketId: string) => {
-    removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
+    if (!backendEnabled) return
+    removeLotoTicket(convex, ticketId as Id<'loto_tickets'>).catch((e) => console.error(e))
   }
   lotoStore.banSaver = (ticketId: string) => {
-    banLotoUser(convex, ticketId as Id<'loto_tickets'>).catch(() => {})
+    if (!backendEnabled) return
+    banLotoUser(convex, ticketId as Id<'loto_tickets'>).catch((e) => console.error(e))
   }
   lotoStore.ticketSaver = (draft) => {
-    if (!lotoStore.gameId) return
-    addLotoTicket(convex, lotoStore.gameId as Id<'loto_games'>, draft).catch(() => {})
+    if (!lotoStore.gameId || !backendEnabled) return
+    addLotoTicket(convex, lotoStore.gameId as Id<'loto_games'>, draft).catch((e) =>
+      console.error(e),
+    )
   }
   lotoStore.drawPusher = (number: string) => {
-    if (!lotoStore.gameId) return
-    pushDrawnNumber(convex, lotoStore.gameId as Id<'loto_games'>, number).catch(() => {})
+    if (!lotoStore.gameId || !backendEnabled) return
+    pushDrawnNumber(convex, lotoStore.gameId as Id<'loto_games'>, number).catch((e) =>
+      console.error(e),
+    )
   }
   lotoStore.winnerReporter = (ticketId: string | null) => {
-    if (!lotoStore.gameId) return
+    if (!lotoStore.gameId || !backendEnabled) return
     setLotoWinner(
       convex,
       lotoStore.gameId as Id<'loto_games'>,
       ticketId as Id<'loto_tickets'> | null,
-    ).catch(() => {})
+    ).catch((e) => console.error(e))
   }
 
   // Stream channels for the game, from connected chats (lowercased match backend).
-  const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase()))
+  const gameChannels = $derived(store.connectedConnections.map((c) => c.toLowerCase() as ConnKey))
 
   // Owner-only gate for the streamer-ticket button: this session must have
   // proved ownership of every active channel (fail closed while auth state
@@ -94,6 +107,35 @@
   const isChannelOwner = $derived(
     store.connectedConnections.length > 0 &&
       store.connectedConnections.every((c) => authStore.connectionInfo[c]?.authenticated ?? false),
+  )
+
+  // Reactive session id: AuthChannel mints it asynchronously after mount,
+  // so a plain getSessionId() read would miss it.
+  let sessionId = $state<string | undefined>(undefined)
+  $effect(() => {
+    sessionId = getSessionId()
+    const onSession = (e: Event) => {
+      sessionId = (e as CustomEvent<string>).detail ?? getSessionId()
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === 'convex-app:session') sessionId = getSessionId()
+    }
+    window.addEventListener(SESSION_CHANGE_EVENT, onSession)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(SESSION_CHANGE_EVENT, onSession)
+      window.removeEventListener('storage', onStorage)
+    }
+  })
+
+  // Backend mode needs an *authed* session: a session id plus proof of
+  // ownership of at least one connected channel. Without that the game runs
+  // purely in the frontend — no backend records, tickets, draws or winners
+  // are created or stored.
+  const backendEnabled = $derived(
+    !!sessionId &&
+      gameChannels.length > 0 &&
+      gameChannels.some((c) => authStore.connectionInfo[c]?.authenticated ?? false),
   )
 
   // Size params for the generated streamer ticket (chat tickets carry their
@@ -110,15 +152,50 @@
   // One rotation attempt per game id: a failed create must not retry-loop.
   let rotationAttemptedFor: string | null = null
 
+  // Channels already synced to the backend game — avoids re-sending on
+  // every auth flicker (setChannels is idempotent, this just saves noise).
+  let lastSyncedChannels = ''
+
+  // Pushes locally-collected progress (pure frontend mode) into a freshly
+  // created backend game when auth arrives mid-game. Draws go sequentially
+  // (order matters); tickets are independent upserts. Runs *before* the new
+  // gameId is published, so the subscriptions mount onto converged state.
+  async function flushLocalProgress(gameId: Id<'loto_games'>) {
+    const draws = [...lotoStore.drawnNumbers]
+    const tickets = [...lotoStore.remoteTickets]
+    for (const n of draws) {
+      try {
+        await pushDrawnNumber(convex, gameId, n)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    await Promise.allSettled(
+      tickets.map((t) =>
+        addLotoTicket(convex, gameId, {
+          owner_id: t.owner_id,
+          owner_name: t.owner_name,
+          value: t.value,
+          type: t.type,
+          source_server: t.source.server,
+          source_channel: t.source.channel,
+          created_at: t.created_at,
+        }),
+      ),
+    )
+  }
+
   async function ensureGame() {
-    if (!getSessionId()) return
-    if (gameChannels.length === 0) return
+    if (!backendEnabled) return
     if (ensuringGame) return
     if (lotoStore.gameId) {
+      const key = gameChannels.join(',')
+      if (key === lastSyncedChannels) return
       try {
-        await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, gameChannels)
-      } catch {
-        // Backend unavailable — chat polling still works, tickets just stay local.
+        await setLotoChannels(convex, lotoStore.gameId as Id<'loto_games'>, [...gameChannels])
+        lastSyncedChannels = key
+      } catch (e) {
+        console.error(e)
       }
       return
     }
@@ -126,19 +203,33 @@
     try {
       // Re-check: a concurrent path may have set the game while awaiting.
       if (!lotoStore.gameId) {
-        const res = await createLotoGame(convex, gameChannels)
+        // Snapshot local progress first: attaching a backend game must not
+        // drop tickets/draws collected while running purely in frontend.
+        const hadLocalProgress =
+          lotoStore.remoteTickets.length > 0 || lotoStore.drawnNumbers.length > 0
+        const res = await createLotoGame(convex, [...gameChannels])
+        if (hadLocalProgress) {
+          await flushLocalProgress(res.game_id)
+        }
         gameIdStore.value = res.game_id as string
         lotoStore.setGameId(res.game_id as string)
+        lastSyncedChannels = [...gameChannels].join(',')
       }
-    } catch {
-      // Backend unavailable — chat polling still works, tickets just stay local.
+    } catch (e) {
+      console.error(e)
     } finally {
       ensuringGame = false
     }
   }
 
   $effect(() => {
+    // Track everything that can flip backend availability: session minting
+    // is async, and auth arrives per-channel after the chat proof.
+    void sessionId
     void gameChannels.length
+    for (const c of gameChannels) {
+      void (authStore.connectionInfo[c]?.authenticated ?? false)
+    }
     untrack(() => {
       void ensureGame()
     })
@@ -156,11 +247,10 @@
     if (createdAt !== null && Date.now() - createdAt <= LOTO_GAME_STALE_AFTER_MS) return
     const gameId = lotoStore.gameId
     if (!gameId || rotationAttemptedFor === gameId) return
-    // No session yet (minted when the first channel mounts) — retry when
-    // channels arrive via the gameChannels dep, without consuming the
-    // single attempt.
-    void gameChannels.length
-    if (!getSessionId()) return
+    // Rotation only applies to backend games with an authed session. Pure
+    // frontend games have no created_at to go stale by, and a failed create
+    // must not consume the single attempt (retry when auth arrives).
+    if (!backendEnabled) return
     // A concurrent ensureGame create will either mint a fresh game (mooting
     // this) or settle without changes — either way retry on the next change,
     // so don't consume the single attempt here.
@@ -171,19 +261,24 @@
     })
   })
 
+  // Pure frontend reset when no authed session: just clears local round
+  // state (always works, no backend records involved). With an authed
+  // session mints a fresh backend game as before.
   async function newBackendGame() {
-    // No channels guard: a game with zero channels is valid (channels sync
-    // in later via ensureGame) — missing channels or tickets must never
-    // block creating a new game.
     if (ensuringGame) return
+    if (!backendEnabled) {
+      lotoStore.newGame()
+      return
+    }
     ensuringGame = true
     try {
-      const res = await createLotoGame(convex, gameChannels)
+      const res = await createLotoGame(convex, [...gameChannels])
       gameIdStore.value = res.game_id as string
       lotoStore.setGameId(res.game_id as string)
       lotoStore.newGame()
-    } catch {
-      // ignore — stays on current game
+      lastSyncedChannels = [...gameChannels].join(',')
+    } catch (e) {
+      console.error(e)
     } finally {
       ensuringGame = false
     }
@@ -197,16 +292,51 @@
     return key ? (authStore.connectionInfo[key]?.authenticated ?? false) : false
   }
 
-  // Generates the streamer ticket for the main channel (backend picks it
-  // by platform priority). Upserts, so pressing again re-rolls.
+  // Main channel pick mirroring the backend platform priority
+  // (twitch > kick > vkvideo > wtv, see convex/authLib.ts). Used for the
+  // purely-frontend streamer ticket.
+  function pickMainChannel(channels: string[]): { server: string; channel: string } | null {
+    const priority = ['twitch', 'kick', 'vkvideo', 'wtv']
+    let best: { server: string; channel: string } | null = null
+    let bestRank = Number.POSITIVE_INFINITY
+    for (const c of channels) {
+      const [server, channel] = c.split('/')
+      if (!server || !channel) continue
+      const rank = priority.indexOf(server)
+      const r = rank === -1 ? Number.MAX_SAFE_INTEGER : rank
+      if (r < bestRank) {
+        bestRank = r
+        best = { server, channel }
+      }
+    }
+    return best
+  }
+
+  // Generates the streamer ticket for the main channel. With an authed
+  // session the backend picks the channel by platform priority and stores
+  // the ticket (upserts, so pressing again re-rolls). Without one the ticket
+  // is generated purely in the frontend instead.
   async function addStreamer() {
-    if (!lotoStore.gameId || addingStreamer) return
+    if (addingStreamer) return
+    if (!lotoStore.gameId) {
+      const pick = pickMainChannel(gameChannels)
+      if (!pick) return
+      addingStreamer = true
+      try {
+        lotoStore.addLocalStreamerTicket(
+          pick.server as 'twitch' | 'kick' | 'vkvideo' | 'wtv',
+          pick.channel,
+        )
+      } finally {
+        addingStreamer = false
+      }
+      return
+    }
     addingStreamer = true
     try {
       await addStreamerTicket(convex, lotoStore.gameId as Id<'loto_games'>, pollParams())
-    } catch {
-      // ignore — e.g. winner already set or backend unreachable;
-      // the ticket list subscription shows the outcome either way
+    } catch (e) {
+      console.error(e)
     } finally {
       addingStreamer = false
     }
@@ -353,7 +483,7 @@
     </div>
 
     <div class="absolute top-30 right-20 w-fit">
-      {#if lotoStore.streamerTickets.length === 0 && isChannelOwner}
+      {#if lotoStore.streamerTickets.length === 0 && (isChannelOwner || (!lotoStore.gameId && gameChannels.length > 0))}
         <Button
           class="rounded-xl border border-cyan-800 bg-cyan-950 px-4 py-2 text-base font-medium text-cyan-200 transition-colors hover:bg-cyan-900 disabled:opacity-50"
           onclick={() => addStreamer()}
@@ -541,7 +671,7 @@
               </button>
             </div>
             {#if lotoStore.openedChats.has(ticket.id)}
-              <TicketPanel {ticket} canBan={isOwnerFor(ticket)} />
+              <TicketPanel {ticket} canBan={backendEnabled ? isOwnerFor(ticket) : true} />
             {/if}
           </div>
         {/each}

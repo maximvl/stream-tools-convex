@@ -170,6 +170,54 @@ export class LotoStore {
   // optimistic crypto.randomUUID ids).
   ticketSaver: ((draft: LotoTicketDraft) => void) | null = null
 
+  // Adds a ticket to the local state and queues it for backend persistence
+  // (via ticketSaver, a no-op when no backend game is attached). One ticket
+  // per owner: resending from the same owner replaces the previous one.
+  // Works fully offline — this is what keeps the game running with no
+  // authed session (pure frontend mode).
+  saveOptimisticTicket(t: LotoTicket) {
+    // Banned users never get tickets, even on resend.
+    if (this.isBanned(t.source.server, t.source.channel, t.owner_name)) return
+    this.pendingTicketIds.add(t.id)
+    // One ticket per owner: last message wins.
+    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
+    this.ticketSaver?.({
+      owner_id: t.owner_id,
+      owner_name: t.owner_name,
+      value: t.value,
+      type: t.type,
+      source_server: t.source.server,
+      source_channel: t.source.channel,
+      created_at: t.created_at,
+    })
+  }
+
+  // Generates the streamer ticket locally (pure frontend mode): samples a
+  // fresh ticket for the given channel and upserts it on the synthetic
+  // streamer id, mirroring backend `addStreamerTicket`. Pressing again
+  // re-rolls. Rejected while a winner is set — same rule as chat tickets.
+  addLocalStreamerTicket(server: ChatServer, channel: string) {
+    if (this.winner) return
+    const normalizedChannel = channel.toLowerCase()
+    const ownerId = streamerOwnerId(server, normalizedChannel) as UserId
+    const ticket: LotoTicket = {
+      id: crypto.randomUUID() as LotoTicketId,
+      owner_id: ownerId,
+      owner_name: normalizedChannel,
+      value: sampleSize(this.fullDrawPool(), this.config.value.ticket_size),
+      color: 'random',
+      variant: 1,
+      type: 'chat',
+      source: { server, channel: normalizedChannel },
+      created_at: Date.now(),
+      isLatecomer: false,
+    }
+    if (!this.usersById.has(ownerId)) {
+      this.usersById.set(ownerId, { id: ownerId, displayName: normalizedChannel } as ChatUser)
+    }
+    this.saveOptimisticTicket(ticket)
+  }
+
   // Set by the page: persists a rolled number to the backend game.
   // Rolls for a game with a winner set are ignored server-side.
   drawPusher: ((number: string) => void) | null = null
@@ -568,20 +616,7 @@ export class LotoStore {
         : fallbackId
 
     const saveOptimistic = (t: LotoTicket) => {
-      // Banned users never get tickets, even on resend.
-      if (this.isBanned(t.source.server, t.source.channel, t.owner_name)) return
-      this.pendingTicketIds.add(t.id)
-      // One ticket per owner: last message wins.
-      this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
-      this.ticketSaver?.({
-        owner_id: t.owner_id,
-        owner_name: t.owner_name,
-        value: t.value,
-        type: t.type,
-        source_server: t.source.server,
-        source_channel: t.source.channel,
-        created_at: t.created_at,
-      })
+      this.saveOptimisticTicket(t)
     }
 
     if (isMessageFromVkBot(msg)) {
