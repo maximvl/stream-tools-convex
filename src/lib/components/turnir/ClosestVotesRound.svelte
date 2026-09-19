@@ -7,6 +7,7 @@
   import { untrack } from 'svelte'
   import InfoPanel from './InfoPanel.svelte'
   import PollResults from './PollResults.svelte'
+  import SelectItem from './SelectItem.svelte'
   import VotesLog from './VotesLog.svelte'
 
   type Props = {
@@ -17,7 +18,7 @@
 
   let { items, onItemElimination, subscriberOnly }: Props = $props()
 
-  type Phase = 'voting' | 'streamer_choice' | 'show_results'
+  type Phase = 'voting' | 'blind_pick' | 'revealed'
 
   const STOP_LOCK_SECONDS = 15
 
@@ -32,17 +33,24 @@
   let voting = $state<TurnirVoting | null>(null)
   let phase = $state<Phase>('voting')
   let time = $state(0)
-  let targetNumber = $state(0)
+  let shuffledIds = $state<string[]>([])
+  let markedId = $state<string | null>(null)
 
   let stopLocked = $derived(time < STOP_LOCK_SECONDS)
 
-  let maxVotes = $derived.by(() => {
+  let votesByOption = $derived.by(() => {
     const counts: Record<string, number> = {}
     for (const item of items) counts[item.id] = 0
     for (const vote of voting?.votes ?? []) {
       if (vote in counts) counts[vote] += 1
     }
-    return Math.max(0, ...Object.values(counts))
+    return counts
+  })
+
+  let itemById = $derived.by(() => {
+    const map = new Map<string, Item>()
+    for (const item of items) map.set(item.id, item)
+    return map
   })
 
   $effect(() => {
@@ -51,7 +59,8 @@
     voting = next
     phase = 'voting'
     time = 0
-    targetNumber = 0
+    shuffledIds = []
+    markedId = null
     const interval = setInterval(() => {
       time += 1
     }, 1000)
@@ -67,13 +76,32 @@
     })
   })
 
-  function stopVoting() {
-    voting?.finish()
-    phase = 'streamer_choice'
+  function shuffle(ids: string[]): string[] {
+    const arr = [...ids]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
   }
 
-  function showResults() {
-    phase = 'show_results'
+  function stopVoting() {
+    voting?.finish()
+    // Shuffled once here so the order stays stable for the rest of the round.
+    shuffledIds = shuffle(items.map((item) => item.id))
+    markedId = null
+    phase = 'blind_pick'
+  }
+
+  function handleBlindClick(id: string) {
+    markedId = id
+    phase = 'revealed'
+  }
+
+  function handleRevealClick(id: string) {
+    if (id === markedId) {
+      onItemElimination(id)
+    }
   }
 </script>
 
@@ -94,52 +122,56 @@
         voteVerb=""
       />
     </div>
-  {:else if phase === 'streamer_choice'}
+  {:else if phase === 'blind_pick'}
     <div class="grid justify-center">
       <InfoPanel>
-        <p>Стример пытается угадать сколько голосов за разные варианты</p>
-        <h3 class="font-bold">Будет удален вариант с наиболее близким числом голосов</h3>
+        <p>Выбери вариант для удаления, не видя названий</p>
       </InfoPanel>
     </div>
-    <div class="m-8 flex items-center justify-center gap-4">
-      <input
-        type="range"
-        aria-label="Количество голосов"
-        class="w-3/5 accent-primary"
-        min={0}
-        max={Math.max(0, maxVotes)}
-        step={1}
-        bind:value={targetNumber}
-      />
-      <span class="min-w-12 text-center text-2xl font-black text-primary">{targetNumber}</span>
+    <div class="mt-4 flex justify-center">
+      <div class="flex w-full max-w-md flex-col gap-2.5">
+        {#each shuffledIds as id (id)}
+          {@const item = itemById.get(id)}
+          {#if item}
+            <SelectItem
+              {item}
+              selected={false}
+              hideTitle
+              hideId
+              endText={`голосов: ${votesByOption[id] ?? 0}`}
+              highlightOnHover
+              fullWidth
+              onItemClick={handleBlindClick}
+            />
+          {/if}
+        {/each}
+      </div>
     </div>
-    <Button class="bg-green-600 hover:bg-green-500" onclick={showResults}>Показать голоса</Button>
   {:else}
     <div class="grid justify-center">
       <InfoPanel>
-        <p>Стример пытается угадать сколько голосов за разные варианты</p>
-        <h3 class="font-bold">Будет удален вариант с наиболее близким числом голосов</h3>
+        <p>Названия открыты. Нажми на отмеченный вариант, чтобы удалить его</p>
       </InfoPanel>
     </div>
-    <div class="m-8 flex items-center justify-center gap-4">
-      <input
-        type="range"
-        aria-label="Количество голосов"
-        class="w-3/5 accent-primary"
-        disabled
-        min={0}
-        max={Math.max(0, maxVotes)}
-        step={1}
-        value={targetNumber}
-      />
-      <span class="min-w-12 text-center text-2xl font-black text-primary">{targetNumber}</span>
+    <div class="mt-4 flex justify-center">
+      <div
+        class="grid w-full max-w-xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5"
+      >
+        {#each shuffledIds as id (id)}
+          {@const item = itemById.get(id)}
+          {#if item}
+            <SelectItem
+              {item}
+              selected={id === markedId}
+              fullWidth
+              onItemClick={handleRevealClick}
+            />
+            <div class="text-lg leading-none">
+              {votesByOption[id] ?? 0}
+            </div>
+          {/if}
+        {/each}
+      </div>
     </div>
-    <PollResults
-      {items}
-      votes={voting?.votes ?? []}
-      {onItemElimination}
-      showInfo={false}
-      winnerCheck={(count: number) => 1000 - Math.abs(count - Number(targetNumber))}
-    />
   {/if}
 </div>

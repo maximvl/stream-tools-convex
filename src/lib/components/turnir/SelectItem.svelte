@@ -11,6 +11,12 @@
     /** 0-100 background fill showing vote share */
     fillPct?: number
     fullWidth?: boolean
+    /** Mask the title with "?" (blind pick phases) */
+    hideTitle?: boolean
+    /** Hide the id badge (fully anonymous blind pick) */
+    hideId?: boolean
+    /** Trailing text pinned to the button's right edge (e.g. vote count) */
+    endText?: string
   }
 
   let {
@@ -20,6 +26,9 @@
     highlightOnHover = false,
     fillPct = 0,
     fullWidth = false,
+    hideTitle = false,
+    hideId = false,
+    endText,
   }: Props = $props()
 
   let isHovered = $state(false)
@@ -53,11 +62,20 @@
       style:width={`${fillPct}%`}
     ></span>
   {/if}
-  <span class="relative flex items-center gap-2">
-    <span class={cn('text-xl font-bold', highlight ? 'text-red-200' : 'text-orange-500')}>
-      {item.id}
-    </span>
-    <span class={cn('h-5 w-px', highlight ? 'bg-red-200/60' : 'bg-muted-foreground/50')}></span>
-    <ItemTitle {item} />
+  <span class={cn('relative flex items-center gap-2', endText && 'w-full')}>
+    {#if !hideId}
+      <span class={cn('text-xl font-bold', highlight ? 'text-red-200' : 'text-orange-500')}>
+        {item.id}
+      </span>
+      <span class={cn('h-5 w-px', highlight ? 'bg-red-200/60' : 'bg-muted-foreground/50')}></span>
+    {/if}
+    {#if hideTitle}
+      <span class="text-xl font-bold text-muted-foreground">?</span>
+    {:else}
+      <ItemTitle {item} />
+    {/if}
+    {#if endText !== undefined}
+      <span class="ml-auto text-lg font-bold text-muted-foreground">{endText}</span>
+    {/if}
   </span>
 </button>
