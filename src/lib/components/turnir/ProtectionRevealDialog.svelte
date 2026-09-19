@@ -24,14 +24,12 @@
       Вместо удаления <span class="text-green-500">{item?.title}</span> с него снимается защита!
     </p>
     <div class="mt-4 flex justify-end gap-2">
-      <Button
-        variant="outline"
-        onclick={() => {
-          open = false
-        }}
-      >
-        Согласен
-      </Button>
+      <!--
+        onConfirm is called directly: bits-ui only fires onOpenChange on internal
+        interactions (overlay/Escape), not on programmatic closes. resolve* is
+        idempotent, so a trailing onOpenChange from the close is a safe no-op.
+      -->
+      <Button variant="outline" onclick={onConfirm}>Согласен</Button>
     </div>
   </Dialog.Content>
 </Dialog.Root>
