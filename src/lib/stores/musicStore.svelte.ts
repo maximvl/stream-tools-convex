@@ -5,15 +5,17 @@ import { LocalStore } from './localStore.svelte'
 export type MusicTrack =
   'wheel' | 'victory' | 'thinking' | 'rickroll' | 'nightsong' | 'deathnote' | 'light' | 'raphael'
 
+const MUSIC_BASE = '/static/media'
+
 export const MUSIC_TRACKS: Record<MusicTrack, { src: string; loop: boolean }> = {
-  wheel: { src: '/audio/turnir/spinner_music.mp3', loop: true },
-  victory: { src: '/audio/turnir/victory_music.mp3', loop: true },
-  thinking: { src: '/audio/turnir/thinking_music.mp3', loop: true },
-  rickroll: { src: '/audio/turnir/rickroll_music.mp3', loop: true },
-  nightsong: { src: '/audio/turnir/nightsong_music.mp3', loop: true },
-  deathnote: { src: '/audio/turnir/deathnote_music.mp3', loop: true },
-  light: { src: '/audio/turnir/light_music.mp3', loop: true },
-  raphael: { src: '/audio/turnir/raphael_music.mp3', loop: true },
+  wheel: { src: `${MUSIC_BASE}/spinner_music.mp3`, loop: true },
+  victory: { src: `${MUSIC_BASE}/victory_music.mp3`, loop: true },
+  thinking: { src: `${MUSIC_BASE}/thinking_music.mp3`, loop: true },
+  rickroll: { src: `${MUSIC_BASE}/rickroll_music.mp3`, loop: true },
+  nightsong: { src: `${MUSIC_BASE}/nightsong_music.mp3`, loop: true },
+  deathnote: { src: `${MUSIC_BASE}/deathnote_music.mp3`, loop: true },
+  light: { src: `${MUSIC_BASE}/light_music.mp3`, loop: true },
+  raphael: { src: `${MUSIC_BASE}/raphael_music.mp3`, loop: true },
 }
 
 export const MUSIC_TRACK_IDS: Record<MusicTrack, string> = {
