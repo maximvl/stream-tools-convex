@@ -34,10 +34,15 @@
     setLotoWinner,
     addStreamerTicket,
     banLotoUser,
+    markGameFinished,
   } from '$lib/api/lotoTickets'
   import { fetchVkRoles } from '$lib/api'
   import type { ChatServer } from '$lib/types'
-  import { BackgroundImages, LOTO_GAME_STALE_AFTER_MS } from '$lib/constants'
+  import {
+    BackgroundImages,
+    FINISHED_GAME_ROTATE_AFTER_MS,
+    LOTO_GAME_STALE_AFTER_MS,
+  } from '$lib/constants'
 
   import BgPattern5 from '$lib/components/common/BgPattern5.svelte'
   import LotoTicketsSync from '$lib/components/loto/LotoTicketsSync.svelte'
@@ -256,6 +261,39 @@
     // this) or settle without changes — either way retry on the next change,
     // so don't consume the single attempt here.
     if (ensuringGame) return
+    rotationAttemptedFor = gameId
+    untrack(() => {
+      void newBackendGame()
+    })
+  })
+
+  // Persist the finish time whenever a winner is derived — even for local
+  // temp-id rows that setWinner can't accept (it needs a real ticket id).
+  // The finished-game rotation on next load keys off finished_at, so live
+  // finishes must stamp it too. Keeps the first timestamp server-side.
+  $effect(() => {
+    const winner = lotoStore.winner
+    untrack(() => {
+      if (!winner || !lotoStore.gameId || !backendEnabled) return
+      markGameFinished(convex, lotoStore.gameId as Id<'loto_games'>).catch((e) => console.error(e))
+    })
+  })
+
+  // Finished-game rotation: a loaded game that already has a winner and
+  // finished over FINISHED_GAME_ROTATE_AFTER_MS ago is not restored —
+  // start a fresh game instead. Games finished before finished_at existed
+  // carry a winner but no timestamp and rotate as well. Shares the single
+  // rotation attempt per game id with the stale-game rotation above.
+  $effect(() => {
+    if (!lotoStore.gameLoaded || !backendEnabled) return
+    const gameId = lotoStore.gameId
+    if (!gameId || rotationAttemptedFor === gameId) return
+    if (ensuringGame) return
+    const finishedAt = lotoStore.gameFinishedAt
+    const finishedLongAgo =
+      (finishedAt !== null && Date.now() - finishedAt > FINISHED_GAME_ROTATE_AFTER_MS) ||
+      (finishedAt === null && lotoStore.backendWinnerTicketId !== null)
+    if (!finishedLongAgo) return
     rotationAttemptedFor = gameId
     untrack(() => {
       void newBackendGame()

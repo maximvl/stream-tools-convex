@@ -33,5 +33,12 @@
         lotoStore.setGameCreatedAt(createdAt)
       })
     }
+    const finishedAt = game.data?.finished_at
+    if (finishedAt !== undefined || game.data?.winner_ticket_id !== undefined) {
+      untrack(() => {
+        lotoStore.setGameFinishedAt(finishedAt)
+        lotoStore.setBackendWinnerTicketId(game.data?.winner_ticket_id)
+      })
+    }
   })
 </script>

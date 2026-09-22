@@ -104,3 +104,7 @@ export const SuperGameIcons = {
 // LOTO_GAME_STALE_AFTER_MS in convex/lotoLib.ts (kept below the 24h ticket
 // TTL so an active game never loses tickets underneath it).
 export const LOTO_GAME_STALE_AFTER_MS = 20 * 60 * 60 * 1000
+
+// A loaded loto game that already finished longer ago than this is not
+// restored — the loto page starts a fresh game instead.
+export const FINISHED_GAME_ROTATE_AFTER_MS = 10 * 60 * 1000

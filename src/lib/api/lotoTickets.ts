@@ -76,11 +76,23 @@ export async function setLotoWinner(
   client: ConvexClient,
   game_id: LotoGameId,
   ticket_id: LotoTicketId | null,
-): Promise<{ winner_ticket_id?: LotoTicketId }> {
+): Promise<{ winner_ticket_id?: LotoTicketId; finished_at?: number }> {
   return await client.mutation(api.loto.setWinner, {
     game_id,
     session_id: requireSession(),
     ticket_id: ticket_id ?? undefined,
+  })
+}
+
+// Records the finish time for games whose winner row is a local temp id
+// (setWinner needs a real ticket id). Keeps the first timestamp.
+export async function markGameFinished(
+  client: ConvexClient,
+  game_id: LotoGameId,
+): Promise<{ finished_at: number }> {
+  return await client.mutation(api.loto.markFinished, {
+    game_id,
+    session_id: requireSession(),
   })
 }
 

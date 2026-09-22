@@ -411,6 +411,8 @@ export class LotoStore {
       this.ticketsLoaded = false
       this.gameLoaded = false
       this.gameCreatedAt = null
+      this.gameFinishedAt = null
+      this.backendWinnerTicketId = null
     }
     this.gameId = gameId
   }
@@ -445,6 +447,21 @@ export class LotoStore {
   // the page to detect stale games (old + zero tickets → auto-rotate).
   // Null until the first subscription payload arrives.
   gameCreatedAt = $state<number | null>(null)
+
+  // Backend game finish time + winner id, written by the game
+  // subscription. Used by the page to skip restoring long-finished games
+  // (start a fresh one instead). Null until the first payload arrives, and
+  // for games that never finished.
+  gameFinishedAt = $state<number | null>(null)
+  backendWinnerTicketId = $state<string | null>(null)
+
+  setGameFinishedAt(finishedAt: number | null | undefined) {
+    this.gameFinishedAt = finishedAt ?? null
+  }
+
+  setBackendWinnerTicketId(ticketId: string | null | undefined) {
+    this.backendWinnerTicketId = ticketId ?? null
+  }
 
   setGameCreatedAt(createdAt: number) {
     this.gameCreatedAt = createdAt
@@ -718,6 +735,8 @@ export class LotoStore {
     this.drawPool = this.fullDrawPool()
     this.remoteTickets = []
     this.pendingTicketIds.clear()
+    this.gameFinishedAt = null
+    this.backendWinnerTicketId = null
     this.openedChats = new SvelteSet()
     this.lastReportedWinnerId = null
   }

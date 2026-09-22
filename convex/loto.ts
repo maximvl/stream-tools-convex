@@ -259,6 +259,7 @@ export const getGame = query({
       channels: game.channels,
       drawn_numbers: game.drawn_numbers,
       winner_ticket_id: game.winner_ticket_id,
+      finished_at: game.finished_at,
       created_at: game.created_at,
       tickets_amount: game.tickets_amount ?? 0,
     }
@@ -286,7 +287,9 @@ export const pushDrawnNumber = mutation({
 })
 
 // Frontend winner watcher reports the derived winner (or null to clear,
-// e.g. after the winning ticket is deleted).
+// e.g. after the winning ticket is deleted). Setting a winner stamps
+// finished_at (kept on re-reports); clearing removes only the winner id —
+// finished_at is kept so the game still auto-rotates after its finish.
 export const setWinner = mutation({
   args: {
     game_id: v.id('loto_games'),
@@ -300,8 +303,28 @@ export const setWinner = mutation({
     if (args.ticket_id !== undefined) {
       const ticket = await ctx.db.get(args.ticket_id)
       if (!ticket || ticket.game_id !== args.game_id) throw new Error('Ticket not found in game')
+      const finished_at = game.finished_at ?? Date.now()
+      await ctx.db.patch(args.game_id, { winner_ticket_id: args.ticket_id, finished_at })
+      return { winner_ticket_id: args.ticket_id, finished_at }
     }
-    await ctx.db.patch(args.game_id, { winner_ticket_id: args.ticket_id })
-    return { winner_ticket_id: args.ticket_id }
+    await ctx.db.patch(args.game_id, { winner_ticket_id: undefined })
+    return { winner_ticket_id: args.ticket_id, finished_at: game.finished_at }
+  },
+})
+
+// Records the finish time for games whose winner row is a local temp id
+// (setWinner needs a real ticket id, so the watcher can't report those).
+// Keeps the first timestamp — re-marks are no-ops.
+export const markFinished = mutation({
+  args: { game_id: v.id('loto_games'), session_id: v.string() },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.game_id)
+    if (!game) throw new Error('Game not found')
+    if (game.owner_session_id !== args.session_id) throw new Error('Not the game owner')
+    const finished_at = game.finished_at ?? Date.now()
+    if (game.finished_at === undefined) {
+      await ctx.db.patch(args.game_id, { finished_at })
+    }
+    return { finished_at }
   },
 })

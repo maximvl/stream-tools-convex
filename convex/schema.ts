@@ -147,6 +147,12 @@ export default defineSchema({
     // Set by the frontend winner watcher; frontend ticket creation stops
     // while set.
     winner_ticket_id: v.optional(v.id('loto_tickets')),
+    // When the game finished (winner first set). Used by the frontend to
+    // skip restoring long-finished games and start a fresh one instead.
+    // Kept when the winner is cleared, so a finished game still
+    // auto-rotates after its finish. Optional: games finished
+    // before this field existed carry a winner but no timestamp.
+    finished_at: v.optional(v.number()),
     // Cumulative tickets ever added to this game (upserts and re-rolls don't
     // double-count). Never decremented — survives ticket eviction so totals
     // stay visible as stats. Optional: games created before this field
