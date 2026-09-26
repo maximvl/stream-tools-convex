@@ -738,7 +738,14 @@ export class LotoStore {
       return
     }
 
-    if (!msg.text.toLowerCase().includes(LOTO_MATCH)) {
+    const isFromVkBot = isMessageFromVkBot(msg)
+
+    const cleanedText = msg.text.trim().toLocaleLowerCase()
+
+    if (
+      !cleanedText.includes(`+${LOTO_MATCH}`) ||
+      (isFromVkBot && !cleanedText.includes(LOTO_MATCH))
+    ) {
       return
     }
 
@@ -975,6 +982,17 @@ function genTicketNumber(params: { text: string; pool: string[]; config: LotoCon
 
 function isMessageFromVkBot(msg: ChatMessageWithSource) {
   return msg.source.server === 'vkvideo' && msg.user.displayName === VK_CHAT_BOT_NAME
+}
+
+// Registration trigger: a `+лото` command — exactly `+лото` or `+лото`
+// followed by anything (`+лото 5 10`, `+лото привет`). Case-insensitive,
+// surrounding whitespace ignored. Anything else merely mentioning лото is
+// plain chatter and registers nothing. Number parsing itself stays in
+// genTicketNumber (non-numeric tails are sampled over).
+function isLotoRegistrationMessage(text: string): boolean {
+  const cleaned = text.trim().toLowerCase()
+  const prefix = `+${LOTO_MATCH}`
+  return cleaned.startsWith(prefix)
 }
 
 function isMessageHighlightedOnTwitch(msg: ChatMessageWithSource) {
