@@ -18,6 +18,7 @@ import type {
 } from '$lib/components/loto/types'
 import { createContext, untrack } from 'svelte'
 import shuffle from 'lodash/shuffle'
+import { LOTO_SYNC_TIMEOUT_MS } from '$lib/constants'
 import { createLotoWinner, updateLotoWinner, type LotoWinner } from '$lib/api/loto'
 import type { AuthStore } from './authStore.svelte'
 import type { ChatServer } from '$lib/types'
@@ -112,6 +113,11 @@ export class LotoStore {
   displayNextNumber = $state<string>('')
   isRolling = $state(false)
 
+  // Bumped by newGame() to invalidate an in-flight rollNextNumber: the
+  // continuation after the roll animation checks it and aborts instead of
+  // pushing the rolled number into the fresh game.
+  private rollGeneration = 0
+
   // Backend tickets for the active game (gameId = instance id). The list
   // query in +page.svelte writes here via setRemoteTickets; all derived
   // views (ordering, winner) read from it. Tickets are created in the
@@ -127,12 +133,55 @@ export class LotoStore {
   gameLoaded = $state(false)
   backendSyncing = $derived(this.gameId !== null && (!this.ticketsLoaded || !this.gameLoaded))
 
+  // Set when the game subscription settles to null: the stored game id
+  // points at a row that no longer exists (e.g. backend was reset). The
+  // page drops the zombie binding so a fresh game can be minted.
+  gameMissing = $state(false)
+
+  // Set when the sync watchdog fires: subscriptions didn't settle in time
+  // (dead/slow/blocked backend connection). The UI unblocks into local
+  // mode; late arrivals clear it again via the marks below.
+  syncTimedOut = $state(false)
+  private syncWatchdog: ReturnType<typeof setTimeout> | null = null
+
+  private armSyncWatchdog() {
+    this.clearSyncWatchdog()
+    this.syncWatchdog = setTimeout(() => {
+      this.syncWatchdog = null
+      if (this.gameId !== null && (!this.ticketsLoaded || !this.gameLoaded)) {
+        console.warn('[loto] backend sync timed out — continuing in local mode')
+        this.syncTimedOut = true
+        this.ticketsLoaded = true
+        this.gameLoaded = true
+      }
+    }, LOTO_SYNC_TIMEOUT_MS)
+  }
+
+  private clearSyncWatchdog() {
+    if (this.syncWatchdog !== null) {
+      clearTimeout(this.syncWatchdog)
+      this.syncWatchdog = null
+    }
+  }
+
   markTicketsLoaded() {
     this.ticketsLoaded = true
+    if (this.ticketsLoaded && this.gameLoaded) {
+      this.clearSyncWatchdog()
+      this.syncTimedOut = false
+    }
   }
 
   markGameLoaded() {
     this.gameLoaded = true
+    if (this.ticketsLoaded && this.gameLoaded) {
+      this.clearSyncWatchdog()
+      this.syncTimedOut = false
+    }
+  }
+
+  markGameMissing() {
+    this.gameMissing = true
   }
 
   // Set by the page (has Convex client + session): backend delete call.
@@ -413,6 +462,13 @@ export class LotoStore {
       this.gameCreatedAt = null
       this.gameFinishedAt = null
       this.backendWinnerTicketId = null
+      this.gameMissing = false
+      this.syncTimedOut = false
+      if (gameId !== null) {
+        this.armSyncWatchdog()
+      } else {
+        this.clearSyncWatchdog()
+      }
     }
     this.gameId = gameId
   }
@@ -472,6 +528,24 @@ export class LotoStore {
   // backend": only rows in this set are kept when their owner is absent
   // from the incoming backend list.
   private pendingTicketIds = new Set<string>()
+
+  // Drafts of optimistic tickets not yet confirmed by the backend, for
+  // flushing into a freshly created game (auto-rotation must not drop
+  // registrations collected while offline). The pending set is left intact
+  // so the ticket echo reconciliation still replaces temp rows on arrival.
+  pendingTicketDrafts(): LotoTicketDraft[] {
+    return this.remoteTickets
+      .filter((t) => this.pendingTicketIds.has(t.id))
+      .map((t) => ({
+        owner_id: t.owner_id,
+        owner_name: t.owner_name,
+        value: [...t.value],
+        type: t.type,
+        source_server: t.source.server,
+        source_channel: t.source.channel,
+        created_at: t.created_at,
+      }))
+  }
 
   setRemoteTickets(tickets: LotoTicket[]) {
     // Ignore banned users even if the backend echo still carries them
@@ -730,11 +804,21 @@ export class LotoStore {
   newGame = () => {
     // Backend game creation assigns a fresh gameId (instance isolation);
     // the page wires this up — store just resets local round state.
+    // gameCreatedAt is cleared too: a reset must never inherit the previous
+    // game's age into the stale-game rotation check.
+    // The roll generation is bumped to cancel an in-flight roll animation:
+    // without this, pressing "new game" mid-roll would land the rolled
+    // number in the fresh game after the reset.
+    this.rollGeneration++
+    this.isRolling = false
+    this.nextNumber = ''
+    this.displayNextNumber = ''
     this.gameState = 'registration'
     this.drawnNumbers = []
     this.drawPool = this.fullDrawPool()
     this.remoteTickets = []
     this.pendingTicketIds.clear()
+    this.gameCreatedAt = null
     this.gameFinishedAt = null
     this.backendWinnerTicketId = null
     this.openedChats = new SvelteSet()
@@ -784,12 +868,17 @@ export class LotoStore {
 
     const randomIndex = Math.floor(Math.random() * this.drawPool.length)
     const rolledNumber = this.drawPool[randomIndex]
+    const generation = this.rollGeneration
 
     this.isRolling = true
     this.displayNextNumber = rolledNumber
 
     // Wait for the animation to complete
     await new Promise((resolve) => setTimeout(resolve, this.config.value.roll_animation_time))
+
+    // A new game started mid-animation cancels this roll: the number must
+    // not leak into the fresh board (nor into the backend via drawPusher).
+    if (generation !== this.rollGeneration) return
 
     this.isRolling = false
     this.nextNumber = rolledNumber

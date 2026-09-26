@@ -241,16 +241,33 @@
     })
   })
 
-  // Auto-rotate stale games: older than LOTO_GAME_STALE_AFTER_MS.
-  // Only fires on fully loaded state so unconfirmed
-  // optimistic tickets also block rotation; a fresh empty game is young and
-  // never matches. Missing channels never block it: the new game starts
+  // Drops a zombie binding: the stored game id points at a row that no
+  // longer exists (subscription settled null — e.g. the backend was reset).
+  // Without this the page would keep syncing against a ghost game forever.
+  // Runs before the rotation effects so a ghost never triggers a rotation.
+  $effect(() => {
+    if (!lotoStore.gameMissing || !lotoStore.gameId) return
+    untrack(() => {
+      console.warn('[loto] stored game is gone — clearing binding')
+      gameIdStore.value = null
+      lotoStore.setGameId(null)
+    })
+  })
+
+  // Auto-rotate stale games: older than LOTO_GAME_STALE_AFTER_MS *and*
+  // empty (nothing on the board — e.g. tickets aged out via the 24h
+  // eviction). A game that still has tickets is live and never auto-rotates
+  // no matter its age. Unknown age (game payload not arrived yet) never
+  // matches either, so a fresh game's own first payload can't trigger a
+  // spurious rotation. Missing channels never block it: the new game starts
   // channel-less and ensureGame syncs channels in when they connect.
   // Reuses newBackendGame for the reset + LocalStore write.
   $effect(() => {
     if (!lotoStore.gameLoaded || !lotoStore.ticketsLoaded) return
     const createdAt = lotoStore.gameCreatedAt
-    if (createdAt !== null && Date.now() - createdAt <= LOTO_GAME_STALE_AFTER_MS) return
+    if (createdAt === null || Date.now() - createdAt <= LOTO_GAME_STALE_AFTER_MS) return
+    // Only an old AND empty game is stale — keep live games with tickets.
+    if (lotoStore.remoteTickets.length > 0) return
     const gameId = lotoStore.gameId
     if (!gameId || rotationAttemptedFor === gameId) return
     // Rotation only applies to backend games with an authed session. Pure
@@ -263,7 +280,7 @@
     if (ensuringGame) return
     rotationAttemptedFor = gameId
     untrack(() => {
-      void newBackendGame()
+      void newBackendGame({ preservePending: true })
     })
   })
 
@@ -296,28 +313,83 @@
     if (!finishedLongAgo) return
     rotationAttemptedFor = gameId
     untrack(() => {
-      void newBackendGame()
+      void newBackendGame({ preservePending: true })
     })
   })
 
-  // Pure frontend reset when no authed session: just clears local round
-  // state (always works, no backend records involved). With an authed
-  // session mints a fresh backend game as before.
-  async function newBackendGame() {
+  // Dead-game drop without backend: same deadness rules as the two rotations
+  // above (stale-old-and-empty, or finished long ago), but with no authed
+  // session there is nothing to rotate *to* — drop the binding and reset
+  // locally instead, so a restored dead game doesn't sit on the board with
+  // yesterday's rolls forever (e.g. tickets aged out, auth never arrives).
+  // Never wipes unsaved offline registrations: with pending tickets around,
+  // the binding is kept until backend arrives and ensureGame attaches them
+  // to a fresh game via flush. Shares the single rotation attempt per game.
+  $effect(() => {
+    if (!lotoStore.gameLoaded || !lotoStore.ticketsLoaded) return
+    if (backendEnabled) return
+    if (ensuringGame) return
+    const gameId = lotoStore.gameId
+    if (!gameId || rotationAttemptedFor === gameId) return
+    if (lotoStore.pendingTicketDrafts().length > 0) return
+    const createdAt = lotoStore.gameCreatedAt
+    const stale =
+      createdAt !== null &&
+      Date.now() - createdAt > LOTO_GAME_STALE_AFTER_MS &&
+      lotoStore.remoteTickets.length === 0
+    const finishedAt = lotoStore.gameFinishedAt
+    const finishedLongAgo =
+      (finishedAt !== null && Date.now() - finishedAt > FINISHED_GAME_ROTATE_AFTER_MS) ||
+      (finishedAt === null && lotoStore.backendWinnerTicketId !== null)
+    if (!stale && !finishedLongAgo) return
+    rotationAttemptedFor = gameId
+    untrack(() => {
+      gameIdStore.value = null
+      lotoStore.setGameId(null)
+      lotoStore.newGame()
+      lastSyncedChannels = ''
+    })
+  })
+
+  // Pure frontend reset when no authed session: drops any restored backend
+  // binding and clears local round state (always works, no backend records
+  // involved). Dropping the binding matters: otherwise the still-mounted
+  // game subscription would echo the old backend draws back over the fresh
+  // board on its next refire (e.g. a channel sync once auth arrives). When
+  // auth does arrive, ensureGame mints a fresh game and flushes the local
+  // progress into it. With an authed session mints a fresh backend game.
+  //
+  // Auto-rotations pass preservePending: registrations collected while
+  // offline (optimistic tickets never confirmed by the backend) are flushed
+  // into the fresh game instead of being wiped by the local reset. Draws
+  // are intentionally not carried over — a rotated game starts fresh rolls.
+  // A manual "new game" press means a clean slate, so it drops everything.
+  async function newBackendGame(opts?: { preservePending?: boolean }) {
     if (ensuringGame) return
     if (!backendEnabled) {
+      gameIdStore.value = null
+      lotoStore.setGameId(null)
       lotoStore.newGame()
+      lastSyncedChannels = ''
       return
     }
     ensuringGame = true
     try {
       const res = await createLotoGame(convex, [...gameChannels])
+      if (opts?.preservePending) {
+        const drafts = lotoStore.pendingTicketDrafts()
+        await Promise.allSettled(drafts.map((d) => addLotoTicket(convex, res.game_id, d)))
+      }
       gameIdStore.value = res.game_id as string
       lotoStore.setGameId(res.game_id as string)
       lotoStore.newGame()
       lastSyncedChannels = [...gameChannels].join(',')
     } catch (e) {
       console.error(e)
+      // A failed create must not consume the single rotation attempt:
+      // publish never happened (binding unchanged), so re-arm and let the
+      // next reactive change retry instead of sticking on a dead game.
+      rotationAttemptedFor = null
     } finally {
       ensuringGame = false
     }
@@ -480,13 +552,29 @@
 {/if}
 <LotoBansSync channels={gameChannels} />
 {#if lotoStore.backendSyncing}
-  <div class="dark relative flex flex-col items-center justify-center overflow-hidden p-6">
+  <div class="dark relative flex flex-col items-center justify-center gap-4 overflow-hidden p-6">
     <div class="bg-card2 animate-pulse rounded-xl border border-primary/60 p-8 text-2xl">
       Загрузка игры…
     </div>
+    <Button
+      class="hover:bg-card2 rounded-lg bg-card px-4 py-2 text-sm text-muted-foreground hover:text-primary"
+      onclick={() => {
+        lotoStore.markTicketsLoaded()
+        lotoStore.markGameLoaded()
+      }}
+    >
+      Продолжить без загрузки
+    </Button>
   </div>
 {:else}
   <div class="dark relative flex min-h-screen flex-col overflow-hidden p-6">
+    {#if lotoStore.syncTimedOut}
+      <div
+        class="mx-auto mb-4 rounded-xl border border-amber-500/60 bg-amber-950/60 px-4 py-2 text-sm text-amber-200"
+      >
+        Нет связи с сервером — игра в локальном режиме, история не сохраняется
+      </div>
+    {/if}
     <div class="fixed top-6 left-6 z-10 flex flex-col gap-4">
       <ConnectionDialog />
       <AuthDialog {authStore} />

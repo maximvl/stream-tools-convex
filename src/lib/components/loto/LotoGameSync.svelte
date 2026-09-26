@@ -21,6 +21,15 @@
         lotoStore.markGameLoaded()
       })
     }
+    // Settled null (not undefined/loading): the stored game id points at a
+    // row that no longer exists. Flag it so the page drops the zombie
+    // binding instead of syncing against a ghost forever.
+    if (game.data === null) {
+      untrack(() => {
+        lotoStore.markGameMissing()
+      })
+      return
+    }
     const drawn = game.data?.drawn_numbers
     if (drawn) {
       untrack(() => {
