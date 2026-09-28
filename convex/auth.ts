@@ -1,7 +1,7 @@
-import { query, mutation, action } from './_generated/server'
+import { query, mutation, action, type QueryCtx, type MutationCtx } from './_generated/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
-import { parseIdentity, cacheKeyFor } from './userIdentity'
+import { parseIdentity, cacheKeyFor, type Platform } from './userIdentity'
 import { fetchChatMessages } from './chatService'
 
 const SESSION_LEN = 15
@@ -14,6 +14,31 @@ function makeId(len: number): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('')
 }
 
+// Tolerates duplicate user_auth rows for one identity (two tabs confirming
+// at once can insert twice before either sees the other): latest write wins
+// instead of throwing like .unique() would on a non-unique index.
+// Leftovers are merged away by upsertSession on the next confirm.
+async function latestUserAuth(ctx: QueryCtx | MutationCtx, platform: Platform, user_slug: string) {
+  const rows = await ctx.db
+    .query('user_auth')
+    .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
+    .collect()
+  const best = rows.sort((a, b) => b.updated_at - a.updated_at)[0]
+  return best ?? null
+}
+
+// Same duplicate tolerance for auth_keys (concurrent checks from two tabs
+// sharing one session can double-insert before either sees the other).
+// Expired duplicates are evicted hourly by cron anyway.
+async function latestKeyRow(ctx: QueryCtx | MutationCtx, cache_key: string) {
+  const rows = await ctx.db
+    .query('auth_keys')
+    .withIndex('by_cache_key', (q) => q.eq('cache_key', cache_key))
+    .collect()
+  const best = rows.sort((a, b) => b.expires_at - a.expires_at)[0]
+  return best ?? null
+}
+
 // GET /api/auth_check?stream_channel=  (Handlers.fs:12-32)
 // Single round trip: verifies the session AND get-or-creates the auth key.
 // A mutation (not a query) because creating the key is a write.
@@ -21,12 +46,15 @@ function makeId(len: number): string {
 export const check = mutation({
   args: { stream_channel: v.string(), session_id: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { platform, user_slug } = parseIdentity(args.stream_channel)
+    let identity: { platform: Platform; user_slug: string }
+    try {
+      identity = parseIdentity(args.stream_channel)
+    } catch {
+      throw new Error(`Invalid stream_channel: ${args.stream_channel}`)
+    }
+    const { platform, user_slug } = identity
     const session_id = args.session_id ?? makeId(SESSION_LEN)
-    const saved = await ctx.db
-      .query('user_auth')
-      .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
-      .unique()
+    const saved = await latestUserAuth(ctx, platform, user_slug)
     if (args.session_id && saved && saved.session_id === args.session_id) {
       return { authenticated: true as const, session_id }
     }
@@ -40,10 +68,7 @@ export const check = mutation({
       .collect()
     const shared = sessionRows.find((r) => r.expires_at > now)
     if (shared) {
-      const existing = await ctx.db
-        .query('auth_keys')
-        .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
-        .unique()
+      const existing = await latestKeyRow(ctx, cacheKey)
       if (existing) {
         if (existing.auth_key !== shared.auth_key) {
           await ctx.db.patch(existing._id, {
@@ -64,10 +89,7 @@ export const check = mutation({
       }
       return { authenticated: false as const, auth_key: shared.auth_key, session_id }
     }
-    const existing = await ctx.db
-      .query('auth_keys')
-      .withIndex('by_cache_key', (q) => q.eq('cache_key', cacheKey))
-      .unique()
+    const existing = await latestKeyRow(ctx, cacheKey)
     if (existing && existing.expires_at > now) {
       return { authenticated: false as const, auth_key: existing.auth_key, session_id }
     }
@@ -91,10 +113,7 @@ export const isAuthenticated = query({
   handler: async (ctx, args) => {
     try {
       const { platform, user_slug } = parseIdentity(args.stream_channel)
-      const saved = await ctx.db
-        .query('user_auth')
-        .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
-        .unique()
+      const saved = await latestUserAuth(ctx, platform, user_slug)
       return { authenticated: saved?.session_id === args.session_id }
     } catch {
       return { authenticated: false }

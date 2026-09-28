@@ -4,7 +4,7 @@ import type { ConvexClient } from 'convex/browser'
 import { api } from '../../../convex/_generated/api.js'
 import { getSessionId } from '$lib/session'
 import type { ChatConnection, ChatServer } from '$lib/types'
-import { connToKey, type ConnKey } from './chatMessagesStore.svelte'
+import { connToKey, isValidConnKey, type ConnKey } from './chatMessagesStore.svelte'
 
 const CONFIRM_INTERVAL_MS = 5000
 const CONFIRM_MAX_ATTEMPTS = 5
@@ -75,7 +75,16 @@ export class AuthStore {
   }
 
   add(c: ChatConnection) {
-    this.connections.push(connToKey(c))
+    const key = connToKey(c)
+    // Stored connections are never schema-checked on load: skip rows the
+    // backend would reject (empty channel, unknown/legacy server) so they
+    // never mount an AuthChannel that fails forever. Manage/remove them in
+    // the connections dialog.
+    if (!isValidConnKey(key)) {
+      console.warn('[auth] skipping invalid connection', key)
+      return
+    }
+    this.connections.push(key)
   }
 }
 

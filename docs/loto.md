@@ -7,8 +7,9 @@ with `win_matches_amount` (default 3) sequential matches wins.
 ## Ticket types
 
 - **Chat tickets** — created in the frontend from chat polling
-  (`LotoStore.handleMessage`). One per owner ("last message wins", upsert on
-  `owner_id`). Text after `+лото` is parsed for numbers 1–`max_number`;
+  (`LotoStore.handleMessage`). One per owner: resending replaces the numbers
+  but keeps the original creation time (first registration holds the place
+  in line). Text after `+лото` is parsed for numbers 1–`max_number`;
   missing numbers are sampled from the remaining pool.
 - **Points tickets** — highlighted Twitch messages and VK bot mentions
   (points redemption), attributed to the mentioned user.

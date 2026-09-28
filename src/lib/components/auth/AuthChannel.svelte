@@ -8,6 +8,7 @@
   import { untrack } from 'svelte'
   import { api } from '../../../../convex/_generated/api.js'
   import { getSessionId, mintSingleFlight, setSessionId } from '$lib/session'
+  import { isValidConnKey } from '$lib/stores/chatMessagesStore.svelte'
   import type { ChatServer } from '$lib/types'
   import type { ConnKey } from '$lib/stores/chatMessagesStore.svelte'
   import type { AuthStore } from '$lib/stores/authStore.svelte'
@@ -37,9 +38,27 @@
   // One-shot bootstrap: verified session + fresh auth key in one call. When
   // no session is stored yet the backend mints one (single-flight across all
   // mounted channels); afterwards this channel checks in under it.
+  //
+  // Retries are bounded with backoff: a failing check used to retry
+  // immediately and forever (one tight mutation loop per channel — endless
+  // console errors and backend hammering). Invalid channels never call at
+  // all (the backend would reject them deterministically). The live
+  // isAuthenticated subscription below keeps running regardless and is the
+  // recovery path when the backend comes back.
+  const BOOT_MAX_ATTEMPTS = 5
+  const BOOT_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000]
+  let bootFailures = 0
+  let bootDead = $state(false)
+
   $effect(() => {
     const sc = stream_channel
-    if (boot || booting) return
+    if (boot || booting || bootDead) return
+    if (!isValidConnKey(sc)) {
+      untrack(() => {
+        bootDead = true
+      })
+      return
+    }
     untrack(() => {
       booting = true
       mintSingleFlight(async () => {
@@ -56,16 +75,28 @@
           })
           setSessionId(res.session_id)
           sessionId = res.session_id
+          bootFailures = 0
           boot = res.authenticated
             ? { authenticated: true }
             : { authenticated: false, authKey: res.auth_key }
+          booting = false
         })
         .catch(() => {
-          // A later re-run retries the bootstrap.
+          // A later re-run retries the bootstrap, with backoff; after
+          // BOOT_MAX_ATTEMPTS the loop stops (live query still recovers).
           boot = undefined
-        })
-        .finally(() => {
-          booting = false
+          bootFailures += 1
+          if (bootFailures >= BOOT_MAX_ATTEMPTS) {
+            bootDead = true
+            booting = false
+          } else {
+            const delay =
+              BOOT_RETRY_DELAYS_MS[Math.min(bootFailures - 1, BOOT_RETRY_DELAYS_MS.length - 1)] ??
+              1000
+            setTimeout(() => {
+              booting = false
+            }, delay)
+          }
         })
     })
   })
@@ -96,10 +127,12 @@
     })
   })
 
-  // Prune on unmount so a removed channel leaves no stale auth behind.
+  // Prune on unmount so a removed channel leaves no stale auth behind,
+  // and stop any pending bootstrap retry from re-arming on a dead component.
   $effect(() => {
     return () => {
       untrack(() => {
+        bootDead = true
         delete authStore.connectionInfo[connKey]
       })
     }

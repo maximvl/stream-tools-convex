@@ -239,23 +239,32 @@ export class LotoStore {
 
   // Adds a ticket to the local state and queues it for backend persistence
   // (via ticketSaver, a no-op when no backend game is attached). One ticket
-  // per owner: resending from the same owner replaces the previous one.
-  // Works fully offline — this is what keeps the game running with no
-  // authed session (pure frontend mode).
+  // per owner: resending from the same owner replaces the previous one, but
+  // keeps the original creation time (first registration holds the place in
+  // line) and row id — only the numbers (plus name/type/source from the new
+  // message) are updated. Works fully offline — this is what keeps the game
+  // running with no authed session (pure frontend mode).
   saveOptimisticTicket(t: LotoTicket) {
     // Banned users never get tickets, even on resend.
     if (this.isBanned(t.source.server, t.source.channel, t.owner_name)) return
-    this.pendingTicketIds.add(t.id)
-    // One ticket per owner: last message wins.
-    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
+    const prev = this.remoteTickets.find((o) => o.owner_id === t.owner_id)
+    // Brand-new rows are unconfirmed until the backend echo replaces them;
+    // replacements of confirmed rows need no tracking (backend upserts on
+    // owner_id and the echo carries the same id), so the pending set is only
+    // extended for genuinely new owners — never with backend ids, which
+    // deleteTicket/banTicket rely on to decide backend deletion.
+    const next: LotoTicket = prev ? { ...t, id: prev.id, created_at: prev.created_at } : t
+    if (!prev) this.pendingTicketIds.add(next.id)
+    // One ticket per owner: last message wins (numbers replaced, time kept).
+    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), next]
     this.ticketSaver?.({
-      owner_id: t.owner_id,
-      owner_name: t.owner_name,
-      value: t.value,
-      type: t.type,
-      source_server: t.source.server,
-      source_channel: t.source.channel,
-      created_at: t.created_at,
+      owner_id: next.owner_id,
+      owner_name: next.owner_name,
+      value: next.value,
+      type: next.type,
+      source_server: next.source.server,
+      source_channel: next.source.channel,
+      created_at: next.created_at,
     })
   }
 
@@ -887,10 +896,21 @@ export class LotoStore {
     // not leak into the fresh board (nor into the backend via drawPusher).
     if (generation !== this.rollGeneration) return
 
+    // The pool may have changed while animating (subscription echo applied
+    // draws rolled concurrently, e.g. from another tab — setDrawnNumbers
+    // rebuilds the pool, so the captured index is stale). Resolve by value:
+    // if the number is already drawn, the echo applied it — pushing again
+    // would duplicate it in drawnNumbers and crash the keyed each block.
+    const idx = this.drawPool.indexOf(rolledNumber)
+    if (idx === -1) {
+      this.isRolling = false
+      return
+    }
+
     this.isRolling = false
     this.nextNumber = rolledNumber
     this.drawnNumbers.push(rolledNumber)
-    this.drawPool = this.drawPool.filter((_, i) => i !== randomIndex)
+    this.drawPool = this.drawPool.filter((_, i) => i !== idx)
     // Persist to backend (source of truth for all tabs); the game
     // subscription echoes it back. Ignored server-side once a winner is set.
     this.drawPusher?.(rolledNumber)

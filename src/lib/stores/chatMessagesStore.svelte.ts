@@ -16,6 +16,21 @@ export function connToKey(connection: ChatConnection): ConnKey {
   return `${connection.server}/${connection.channel}` as ConnKey
 }
 
+// Frontend mirror of backend parseIdentity (convex/userIdentity.ts).
+// Stored connections are never schema-checked on load, so legacy/unknown
+// servers or half-filled rows can sit in localStorage — the backend would
+// reject those with a Server Error, so validate before subscribing/calling.
+// Backend re-validates; this only avoids doomed requests.
+const KNOWN_SERVERS: ReadonlySet<string> = new Set(['twitch', 'kick', 'vkvideo', 'wtv'])
+
+export function isValidConnKey(key: string): key is ConnKey {
+  const sep = key.indexOf('/')
+  if (sep <= 0 || sep === key.length - 1) return false
+  if (!KNOWN_SERVERS.has(key.slice(0, sep).toLowerCase())) return false
+  if (key.slice(sep + 1).trim() === '') return false
+  return true
+}
+
 // Consecutive failed message polls before a connection is considered dead.
 // A single failed poll must NOT flip the status: that instantly unmounts the
 // messages query, remounts the connect query (which refetches immediately),

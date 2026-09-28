@@ -90,14 +90,20 @@ export const getKey = internalQuery({
   args: { stream_channel: v.string(), session_id: v.string() },
   handler: async (ctx, args) => {
     const { platform, user_slug } = parseIdentity(args.stream_channel)
-    const row = await ctx.db
+    const rows = await ctx.db
       .query('auth_keys')
       .withIndex('by_cache_key', (q) =>
         q.eq('cache_key', cacheKeyFor(platform, user_slug, args.session_id)),
       )
-      .unique()
-    if (!row || row.expires_at <= Date.now()) return null
-    return { auth_key: row.auth_key }
+      .collect()
+    // Tolerate duplicate rows (concurrent checks can double-insert); prefer
+    // the longest-lived valid key.
+    const now = Date.now()
+    const best = rows
+      .filter((r) => r.expires_at > now)
+      .sort((a, b) => b.expires_at - a.expires_at)[0]
+    if (!best) return null
+    return { auth_key: best.auth_key }
   },
 })
 
@@ -124,17 +130,16 @@ export const upsertSession = internalMutation({
   },
   handler: async (ctx, args) => {
     const { platform, user_slug } = parseIdentity(args.stream_channel)
-    const existing = await ctx.db
+    // Same identity can hold duplicate rows (two tabs confirming at once
+    // insert twice before either sees the other): keep the latest write and
+    // merge the rest away, so later .unique()-style reads never throw.
+    const matches = await ctx.db
       .query('user_auth')
       .withIndex('by_user', (q) => q.eq('platform', platform).eq('user_slug', user_slug))
-      .unique()
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        session_id: args.session_id,
-        updated_at: Date.now(),
-        via_channel: args.via_channel,
-      })
-    } else {
+      .collect()
+    matches.sort((a, b) => b.updated_at - a.updated_at)
+    const keep = matches[0]
+    if (!keep) {
       await ctx.db.insert('user_auth', {
         user_slug,
         platform,
@@ -142,6 +147,15 @@ export const upsertSession = internalMutation({
         updated_at: Date.now(),
         via_channel: args.via_channel,
       })
+      return
+    }
+    await ctx.db.patch(keep._id, {
+      session_id: args.session_id,
+      updated_at: Date.now(),
+      via_channel: args.via_channel,
+    })
+    for (const dupe of matches.slice(1)) {
+      await ctx.db.delete(dupe._id)
     }
   },
 })

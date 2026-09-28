@@ -157,13 +157,14 @@ export const addStreamerTicket = mutation({
       .unique()
     let id: Id<'loto_tickets'>
     if (existing) {
+      // Re-registration replaces the numbers but keeps the original
+      // creation time (first registration holds the place in line).
       await ctx.db.patch(existing._id, {
         owner_name: ticket.owner_name,
         value: ticket.value,
         type: ticket.type,
         source_server: ticket.source_server,
         source_channel: ticket.source_channel,
-        created_at: ticket.created_at,
       })
       id = existing._id
     } else {
@@ -229,7 +230,15 @@ export const addTicket = mutation({
       .unique()
     let id: Id<'loto_tickets'>
     if (existing) {
-      await ctx.db.patch(existing._id, draft)
+      // Re-registration replaces the numbers but keeps the original
+      // creation time (first registration holds the place in line).
+      await ctx.db.patch(existing._id, {
+        owner_name: draft.owner_name,
+        value: draft.value,
+        type: draft.type,
+        source_server: draft.source_server,
+        source_channel: draft.source_channel,
+      })
       id = existing._id
     } else {
       id = await ctx.db.insert('loto_tickets', {

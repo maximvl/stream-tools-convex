@@ -32,7 +32,11 @@
   `+мой <code>` in chat; `api.auth.confirm` verifies the key appeared from
   the channel owner and upserts `user_auth`. `AuthChannel` bootstraps
   (check + mint) and mirrors a live `isAuthenticated` subscription into
-  `AuthStore`; `AuthDialog` renders confirm state per connection.
+  `AuthStore`; invalid stored connections (empty channel, unknown server) are
+  skipped client-side before any request, and bootstrap retries are bounded
+  with backoff (the live subscription is the recovery path), so a failing
+  channel can never spin into an endless mutation loop. `AuthDialog` renders
+  confirm state per connection.
 - Backend writes are owner-gated (fail closed while auth loads): loto
   mutations require `owner_session_id` match; RPS ownership is channel
   identity (re-authed browsers pass). Loading history (tickets, matches) is
