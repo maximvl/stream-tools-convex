@@ -149,12 +149,15 @@ export const addStreamerTicket = mutation({
     if (await isBanned(ctx, ticket.source_server, ticket.source_channel, ticket.owner_name)) {
       throw new Error('User is banned')
     }
-    const existing = await ctx.db
+    // Upsert only within the streamer's chat type so a bonus points ticket
+    // (if any) for the same owner is not replaced.
+    const existingCandidates = await ctx.db
       .query('loto_tickets')
       .withIndex('by_game_owner', (q) =>
         q.eq('game_id', args.game_id).eq('owner_id', ticket.owner_id),
       )
-      .unique()
+      .collect()
+    const existing = existingCandidates.find((r) => r.type === ticket.type)
     let id: Id<'loto_tickets'>
     if (existing) {
       // Re-registration replaces the numbers but keeps the original
@@ -222,12 +225,17 @@ export const addTicket = mutation({
       source_channel: args.source_channel,
       created_at: args.created_at,
     }
-    const existing = await ctx.db
+    // A user may hold several tickets of different types (e.g. a regular
+    // chat ticket plus a bonus points ticket). Upsert only within the same
+    // type so a points ticket never replaces a regular ticket for the same
+    // user (and vice versa).
+    const existingCandidates = await ctx.db
       .query('loto_tickets')
       .withIndex('by_game_owner', (q) =>
         q.eq('game_id', args.game_id).eq('owner_id', args.owner_id),
       )
-      .unique()
+      .collect()
+    const existing = existingCandidates.find((r) => r.type === args.type)
     let id: Id<'loto_tickets'>
     if (existing) {
       // Re-registration replaces the numbers but keeps the original
@@ -248,8 +256,10 @@ export const addTicket = mutation({
         variant: 1,
         isLatecomer: false,
       })
-      // New owner — count it. Resends from the same owner patch in place
-      // and don't double-count.
+      // New ticket of this type — count it. Re-registrations of the same
+      // type patch in place and don't double-count. A bonus points ticket
+      // added alongside a regular chat ticket is a separate ticket and is
+      // counted separately.
       await ctx.db.patch(args.game_id, { tickets_amount: (game.tickets_amount ?? 0) + 1 })
     }
     const row = await ctx.db.get(id)

@@ -224,11 +224,18 @@ export class LotoStore {
   // any same-owner row, like the echo reconciliation did.
   upsertConfirmedTicket(t: LotoTicket) {
     for (const o of this.remoteTickets) {
-      if (o.owner_id === t.owner_id && o.id !== t.id) {
+      if (o.owner_id === t.owner_id && o.type === t.type && o.id !== t.id) {
         this.pendingTicketIds.delete(o.id)
       }
     }
-    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), t]
+    // Replace only tickets of the same (owner, type); keep any other ticket
+    // (e.g. a regular chat ticket) for the same user.
+    this.remoteTickets = [
+      ...this.remoteTickets.filter(
+        (o) => !(o.owner_id === t.owner_id && o.type === t.type),
+      ),
+      t,
+    ]
     if (!this.usersById.has(t.owner_id)) {
       this.usersById.set(t.owner_id, {
         id: t.owner_id,
@@ -247,16 +254,27 @@ export class LotoStore {
   saveOptimisticTicket(t: LotoTicket) {
     // Banned users never get tickets, even on resend.
     if (this.isBanned(t.source.server, t.source.channel, t.owner_name)) return
-    const prev = this.remoteTickets.find((o) => o.owner_id === t.owner_id)
+    // Only collapse tickets of the *same* type for the same owner: a bonus
+    // points ticket must not replace a regular chat ticket (and vice versa).
+    // Same-type re-registrations keep the original id/creation time.
+    const prev = this.remoteTickets.find(
+      (o) => o.owner_id === t.owner_id && o.type === t.type,
+    )
     // Brand-new rows are unconfirmed until the backend echo replaces them;
     // replacements of confirmed rows need no tracking (backend upserts on
-    // owner_id and the echo carries the same id), so the pending set is only
-    // extended for genuinely new owners — never with backend ids, which
+    // owner_id+type and the echo carries the same id), so the pending set is
+    // only extended for genuinely new tickets — never with backend ids, which
     // deleteTicket/banTicket rely on to decide backend deletion.
     const next: LotoTicket = prev ? { ...t, id: prev.id, created_at: prev.created_at } : t
     if (!prev) this.pendingTicketIds.add(next.id)
-    // One ticket per owner: last message wins (numbers replaced, time kept).
-    this.remoteTickets = [...this.remoteTickets.filter((o) => o.owner_id !== t.owner_id), next]
+    // One ticket per (owner, type): last message wins within the type
+    // (numbers replaced, time kept). Other types for the same owner are kept.
+    this.remoteTickets = [
+      ...this.remoteTickets.filter(
+        (o) => !(o.owner_id === t.owner_id && o.type === t.type),
+      ),
+      next,
+    ]
     this.ticketSaver?.({
       owner_id: next.owner_id,
       owner_name: next.owner_name,
@@ -562,12 +580,12 @@ export class LotoStore {
     const visible = tickets.filter(
       (t) => !this.isBanned(t.source.server, t.source.channel, t.owner_name),
     )
-    const incomingOwners = new Set(visible.map((t) => t.owner_id))
+    const incomingKeys = new Set(visible.map((t) => `${t.owner_id}:${t.type}`))
     const keptPending: LotoTicket[] = []
     for (const t of this.remoteTickets) {
       if (this.pendingTicketIds.has(t.id)) {
-        if (incomingOwners.has(t.owner_id)) {
-          // Backend echo arrived (matched by owner_id) — drop the temp row.
+        if (incomingKeys.has(`${t.owner_id}:${t.type}`)) {
+          // Backend echo arrived (matched by owner_id+type) — drop the temp row.
           this.pendingTicketIds.delete(t.id)
         } else {
           keptPending.push(t)
