@@ -9,16 +9,41 @@
 
   let { user }: Props = $props()
 
+  // Badges arrive per chat message from the external API and are keyed in
+  // {#each} blocks below: dedupe defensively, since two entries can share a
+  // display title/type (e.g. tiered subscriber badges) while differing
+  // elsewhere — duplicate keys throw each_key_duplicate and break rendering
+  // for every card of that user.
   const twitchBadges = $derived.by(() => {
     const b = user.twitchFields?.badges || []
     // if (b.length > 1) {
     //   console.log('twitchBadges', b)
     // }
-    return b
+    const seen = new Set<string>()
+    return b.filter((badge) => {
+      if (seen.has(badge.id)) return false
+      seen.add(badge.id)
+      return true
+    })
   })
   const vkRoles = $derived(user.vkFields?.roles || [])
-  const vkBadges = $derived(user.vkFields?.badges || [])
-  const kickBadges = $derived(user.kickFields?.badges || [])
+  const vkBadges = $derived.by(() => {
+    const seen = new Set<string | number>()
+    return (user.vkFields?.badges || []).filter((badge) => {
+      if (seen.has(badge.id)) return false
+      seen.add(badge.id)
+      return true
+    })
+  })
+  const kickBadges = $derived.by(() => {
+    const seen = new Set<string>()
+    return (user.kickFields?.badges || []).filter((badge) => {
+      const key = `${badge.type}/${badge.name}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  })
 
   const highestPriorityVkRole = $derived.by(() => {
     if (vkRoles.length === 0) return null
@@ -29,7 +54,7 @@
 </script>
 
 <div class="flex items-center gap-1">
-  {#each twitchBadges as badge (badge.title)}
+  {#each twitchBadges as badge (badge.id)}
     <Tooltip.Root>
       <Tooltip.Trigger>
         <img
@@ -74,7 +99,7 @@
     </Tooltip.Root>
   {/each}
 
-  {#each kickBadges as badge (badge.type)}
+  {#each kickBadges as badge (`${badge.type}/${badge.name}`)}
     {#if badge.type === 'moderator'}
       <Tooltip.Root>
         <Tooltip.Trigger>
